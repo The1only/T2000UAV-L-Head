@@ -156,7 +156,6 @@ static void calibrateZero()
  * ============================================================================
  */
 
-#ifdef SIMULATE
 /**
  * @brief Generate simulated differential pressure for testing.
  *
@@ -176,9 +175,8 @@ float simulateDpPa()
     // Add small random noise
     dpPa += random(-20, 21) * 0.1f;
 
-    return dpPa;
+    return -dpPa;
 }
-#endif
 
 /* ============================================================================
  * Public interface
@@ -212,25 +210,27 @@ void airspeed_loop()
 {
     uint16_t rawP = 0, rawT = 0;
     uint8_t status = 0;
+    float dpPa;
 
-#ifdef SIMULATE
-    float dpPa = simulateDpPa();
-#else
-    if (!readMs4525(rawP, rawT, status)) {
-        Serial.println("I2C read failed");
-        delay(200);
-        return;
+    if (SIMULATE == true) { 
+        dpPa = simulateDpPa();
     }
+    else{
+        if (!readMs4525(rawP, rawT, status)) {
+            Serial.println("I2C read failed");
+            delay(200);
+            return;
+        }
 
-    if (status != 0) {
-        Serial.print("Status=");
-        Serial.println(status);
-        delay(200);
-        return;
+        if (status != 0) {
+            Serial.print("Status=");
+            Serial.println(status);
+            delay(200);
+            return;
+        }
+
+        dpPa = rawPressureToPa(rawP);
     }
-
-    float dpPa = rawPressureToPa(rawP);
-#endif
 
     // Polarity correction
     dpPa = -dpPa;
@@ -247,16 +247,21 @@ void airspeed_loop()
     if (correctedPa > DP_DEADBAND_PA) {
         airspeed = sqrtf((2.0f * correctedPa) / AIR_DENSITY);
     }
+    if (correctedPa < -DP_DEADBAND_PA) {
+        airspeed = sqrtf((2.0f * correctedPa) / AIR_DENSITY);
+    }
 
     // Format and transmit CSV message
     String s =
-        String("Airspeed,") +
+        String("AIRSPEED,") +
         String(rawP) + "," +
         String(rawT) + "," +
         String(filteredSpeedValue, 4) + "," +
         String(pressureOffsetPa, 4) + "," +
         String(correctedPa, 2) + "," +
-        String(airspeed, 2) + ",\n";
+        String(airspeed, 2)  + "," +
+        String(sensorValue, 4) + ",\n";
+
 
     for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
         if (serverClients[i] && serverClients[i].connected()) {

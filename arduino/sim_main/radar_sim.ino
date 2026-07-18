@@ -227,7 +227,7 @@ void loopRADAR()
       float range = ((float)outputString[4 + 5] * 256.0f +
                      (float)outputString[4 + 6]) * 0.05f;
 
-      sprintf(buff, "%f,%f,%f\n", section, VrelH, range);
+      sprintf(buff, "RADAR,%f,%f,%f\n", section, VrelH, range);
 
       for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
         if (serverClients[i] && serverClients[i].connected()) {

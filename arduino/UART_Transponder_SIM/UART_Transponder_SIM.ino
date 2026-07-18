@@ -95,33 +95,40 @@ void write_to_transponder(char r)
   }
   else
   {
-    if(output_buffer_head >= sizeof(output_buffer)) output_buffer_head=0;
-    output_buffer[output_buffer_head++]=r;
+    if(output_buffer_head >= sizeof(output_buffer)) output_buffer_head=sizeof(output_buffer)-1;
 
-    if(r < 0x20){
+    if(r != 0x02)
+      output_buffer[output_buffer_head++]=r;
+    else
+      output_buffer[output_buffer_head]=0;
+
+
+    if(r == 0x03){ //< 0x20){
+    //  Serial.write(input_buffer);
+
       output_buffer[output_buffer_head]=0;
 
       switch(output_buffer[0]){
         case 'z':
-          input_buffer_head = sprintf(input_buffer,"T2000U xx-x.x.x\r\n");
+          input_buffer_head = sprintf(input_buffer,"z=T2000U xx-x.x.x");
         break;
 
         case 'c':
           if(output_buffer[2] == '?'){
-            input_buffer_head = sprintf(input_buffer,"c=%d\r\n",squak);
+            input_buffer_head = sprintf(input_buffer,"c=%d",squak);
           }else{
             sscanf(&output_buffer[2],"%i",&squak);     
-            input_buffer_head = sprintf(input_buffer,"c=%d\r\n",squak);
+            input_buffer_head = sprintf(input_buffer,"c=%d",squak);
           }
         break;
 
         case 'a':
           if(output_buffer[2] == '?'){
-            input_buffer_head = sprintf(input_buffer,"a=%dM\r\n",alt);
-            if(altsens == 'g') alt+=1;
+            input_buffer_head = sprintf(input_buffer,"a=%dM",alt);
+            if(altsens == 'g') alt+=10;
           }else{
             sscanf(&output_buffer[2],"%i",&alt);                          
-        //    input_buffer_head = sprintf(input_buffer,"a= %dM\r\n",alt);
+        //    input_buffer_head = sprintf(input_buffer,"a= %dM",alt);
           }
         break;
         
@@ -131,33 +138,34 @@ void write_to_transponder(char r)
           }else if(output_buffer[2] == 'g'){
             altsens = 'g';
           }
-          if(altsens == 's') input_buffer_head = sprintf(input_buffer,"d=s\r\n");
-          else if(altsens == 'g') input_buffer_head = sprintf(input_buffer,"d=g\r\n");
+          if(altsens == 's') input_buffer_head = sprintf(input_buffer,"d=s");
+          else if(altsens == 'g') input_buffer_head = sprintf(input_buffer,"d=g");
         break;
 
         case 'i':
           if(output_buffer[2] == '?'){
-            input_buffer_head = sprintf(input_buffer,"i=%s\r\n",(ident==true)?"1":"0");
+            input_buffer_head = sprintf(input_buffer,"i=%s",(ident==true)?"1":"0");
           }else{
             if(output_buffer[2] == 's'){
               ident=true;
               ident_timer=18;
-              input_buffer_head = sprintf(input_buffer,"i=%s\r\n",(ident==true)?"1":"0");
+              input_buffer_head = sprintf(input_buffer,"i=%s",(ident==true)?"1":"0");
             }                         
           }
         break;
 
         case 's':
           if(output_buffer[2] != '?') lastmode[0] = output_buffer[2];  
-          input_buffer_head = sprintf(input_buffer,"s=%s\r\n",lastmode);
+          lastmode[1] = 0;
+          input_buffer_head = sprintf(input_buffer,"s=%s",lastmode);
         break;
 
         case 'r':
-          input_buffer_head = sprintf(input_buffer,"r=%s\r\n",(Annunciator==true)?"Y":"N"); // ramdomize...
+          input_buffer_head = sprintf(input_buffer,"r=%s",(Annunciator==true)?"Y":"N"); // ramdomize...
         break;
 
         case 'p':
-          input_buffer_head = sprintf(input_buffer,"p=%s\r\n",(hwcheck==true)?"Y":"N"); // RANDOMIZE....
+          input_buffer_head = sprintf(input_buffer,"p=%s",(hwcheck==true)?"Y":"N"); // RANDOMIZE....
         break;
 
         default:
@@ -169,7 +177,9 @@ void write_to_transponder(char r)
 
       if(input_buffer_head > 0)
       {
-        Serial.write(input_buffer);
+        Serial.write(0x02);          // STX
+        Serial.print(input_buffer);  // for example: d=?
+        Serial.write(0x03);          // ETX
         input_buffer_head = 0;
       }
     }
@@ -180,7 +190,10 @@ void write_to_transponder(char r)
 void send_to_transponder(char *x)
 {
   int size = strlen(x);
+
+  Serial.write(0x02);          // STX
   for(int i=0; i < size; i++) write_to_transponder(x[i]);
+  Serial.write(0x03);          // ETX
 }
 
 //--------------------------------------------
@@ -197,13 +210,13 @@ void loop()
   {
     confirmRequestPending = false;
     switch (state) {
-      case 0: send_to_transponder((char*)"v=1\r\n"); break;
-      case 1: send_to_transponder((char*)"z=?\r\n"); break;
-      case 2: send_to_transponder((char*)"c=?\r\n"); break;
-      case 3: send_to_transponder((char*)"a=?\r\n"); break;
-      case 4: send_to_transponder((char*)"i=?\r\n"); break;
-      case 5: send_to_transponder((char*)"s=?\r\n"); break;
-      case 6: send_to_transponder((char*)"r=y\r\n"); break;
+      case 0: send_to_transponder((char*)"v=1"); break;
+      case 1: send_to_transponder((char*)"z=?"); break;
+      case 2: send_to_transponder((char*)"c=?"); break;
+      case 3: send_to_transponder((char*)"a=?"); break;
+      case 4: send_to_transponder((char*)"i=?"); break;
+      case 5: send_to_transponder((char*)"s=?"); break;
+      case 6: send_to_transponder((char*)"r=y"); break;
 //      case 7: send_to_transponder((char*)"*"); break;
     }
     if (++state > 6) state = 2;

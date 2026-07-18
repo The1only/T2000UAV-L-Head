@@ -51,7 +51,7 @@
      <string notr="true"/>
     </property>
     <property name="currentIndex">
-     <number>4</number>
+     <number>2</number>
     </property>
     <widget class="QWidget" name="page_2">
      <widget class="QPushButton" name="pushButton">
@@ -824,13 +824,13 @@ QPushButton:pressed {
       </property>
       <property name="styleSheet">
        <string notr="true">QPushButton {
-background-color: rgb(255, 166, 20);
+color: #333;
 border: 2px solid #555;
 border-radius: 20px;
 border-style: outset;
 background: qradialgradient(
-cx: 0.5, cy: -0.4, fx: 0.3, fy: -0.4,
-radius: 1.35, stop: 0 #fff, stop: 1 #2A0
+cx: 0.3, cy: -0.4, fx: 0.3, fy: -0.4,
+radius: 1.35, stop: 0 #fff, stop: 1 #888
 );
 padding: 5px;
 }
@@ -838,7 +838,8 @@ padding: 5px;
 QPushButton:pressed {
     background-color: rgb(224, 0, 0);
     border-style: inset;
-}</string>
+}
+</string>
       </property>
       <property name="text">
        <string>STBY</string>
@@ -1146,12 +1147,12 @@ padding: 5px;
       </property>
       <property name="dateTime">
        <datetime>
-        <hour>6</hour>
+        <hour>18</hour>
         <minute>0</minute>
         <second>0</second>
         <year>2023</year>
         <month>12</month>
-        <day>25</day>
+        <day>24</day>
        </datetime>
       </property>
       <property name="displayFormat">
@@ -3787,15 +3788,15 @@ QPushButton:pressed {
    <header location="global">QtQuickWidgets/QQuickWidget</header>
   </customwidget>
   <customwidget>
-   <class>QVideoWidget</class>
-   <extends>QWidget</extends>
-   <header>qvideowidget.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
    <class>WidgetASI</class>
    <extends>QWidget</extends>
    <header>example/WidgetASI.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>WidgetVSI</class>
+   <extends>QWidget</extends>
+   <header>example/WidgetVSI.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>
@@ -3811,12 +3812,6 @@ QPushButton:pressed {
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>WidgetVSI</class>
-   <extends>QWidget</extends>
-   <header>example/WidgetVSI.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
    <class>WidgetAI</class>
    <extends>QWidget</extends>
    <header>example/WidgetAI.h</header>
@@ -3826,6 +3821,12 @@ QPushButton:pressed {
    <class>WidgetHI</class>
    <extends>QWidget</extends>
    <header>example/WidgetHI.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>QVideoWidget</class>
+   <extends>QWidget</extends>
+   <header>qvideowidget.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>

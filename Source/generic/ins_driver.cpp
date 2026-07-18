@@ -18,6 +18,15 @@
 
 #include "wit_c_sdk.h"
 
+// Look for an external IMU over Bluetooth
+#ifndef Q_OS_IOS
+#define USE_BT_IMU
+#else
+#undef  USE_BT_IMU
+#endif
+// #undef  USE_BT_IMU
+
+
 #ifndef Q_OS_IOS
 // #if defined(USE_BT_IMU)
     #include "bleuart.h"
@@ -37,7 +46,7 @@ int iAddress  = 0x50;
 #endif
 
 #ifndef USE_BT_IMU
-//#define ComBt void
+    #define ComBt void
 #endif
 
 static ComQt *serialPorts = nullptr;
@@ -54,7 +63,7 @@ static RxCallbackINS  callback_ = nullptr;
 static void setINSRxCallback(RxCallbackINS cb) { callback_ = cb; }
 static void *handle = nullptr;
 
-bool INS_driver(void *handler,ComQt *serPorts, ComBt *serPortb, void *func)
+bool INS_driver(void *handler, ComQt *serPorts, ComBt *serPortb, void *func)
 {
     serialPorts = serPorts;
     serialPortb = serPortb;

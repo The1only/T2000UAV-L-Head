@@ -1,8 +1,6 @@
 #include <QDebug>
-#include "jni.h"
-
-#include <QtCore/private/qandroidextras_p.h>
 #include <QJniObject>
+//#include <QNativeInterface>
 
 #include "lockhelper.h"
 
@@ -12,48 +10,66 @@ KeepAwakeHelper::KeepAwakeHelper()
 
 void KeepAwakeHelper::EnableKeepAwakeHelper()
 {
-    QJniObject activity = QJniObject::callStaticObjectMethod("org/qtproject/qt/android/QtNative", "activity", "()Landroid/app/Activity;");
-    if ( activity.isValid() )
-    {
+    QNativeInterface::QAndroidApplication::runOnAndroidMainThread([]() {
+        QJniObject activity =
+            QNativeInterface::QAndroidApplication::context();
 
-        QJniObject window= activity.callObjectMethod("getWindow", "()Landroid/view/Window;");
-        if (window.isValid()) {
-            const int FLAG_KEEP_SCREEN_ON= 128;
-            window.callMethod<void>("addFlags", "(I)V", FLAG_KEEP_SCREEN_ON);
-            qDebug() << "-------------------Always ON -------------";
+        if (!activity.isValid()) {
+            qWarning() << "KeepAwake: Android activity is invalid";
+            return QVariant();
         }
 
-        QJniObject serviceName = QJniObject::getStaticObjectField<jstring>("android/content/Context","POWER_SERVICE");
-        if ( serviceName.isValid() )
-        {
-            QJniObject powerMgr = activity.callObjectMethod("getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;",serviceName.object<jobject>());
-            if ( powerMgr.isValid() )
-            {
-                jint levelAndFlags = QJniObject::getStaticField<jint>("android/os/PowerManager","SCREEN_DIM_WAKE_LOCK");
+        QJniObject window = activity.callObjectMethod(
+            "getWindow",
+            "()Landroid/view/Window;"
+            );
 
-                QJniObject tag = QJniObject::fromString( "My Tag" );
-
-                m_wakeLock = powerMgr.callObjectMethod("newWakeLock", "(ILjava/lang/String;)Landroid/os/PowerManager$WakeLock;", levelAndFlags,tag.object<jstring>());
-            }
+        if (!window.isValid()) {
+            qWarning() << "KeepAwake: Android window is invalid";
+            return QVariant();
         }
-    }
 
-    if ( m_wakeLock.isValid() )
-    {
-        m_wakeLock.callMethod<void>("acquire", "()V");
-        qDebug() << "Locked device, can't go to standby anymore";
-    }
-    else
-    {
-        assert( false );
-    }
+        constexpr jint FLAG_KEEP_SCREEN_ON = 0x00000080;
+
+        window.callMethod<void>(
+            "addFlags",
+            "(I)V",
+            FLAG_KEEP_SCREEN_ON
+            );
+
+        qDebug() << "KeepAwake: screen will remain on";
+        return QVariant();
+    });
 }
 
-KeepAwakeHelper::~KeepAwakeHelper()
+void KeepAwakeHelper::DisableKeepAwakeHelper()
 {
-    if ( m_wakeLock.isValid() )
-    {
-        m_wakeLock.callMethod<void>("release", "()V");
-        qDebug() << "Unlocked device, can now go to standby";
-    }
+    QNativeInterface::QAndroidApplication::runOnAndroidMainThread([]() {
+        QJniObject activity =
+            QNativeInterface::QAndroidApplication::context();
+
+        if (!activity.isValid()) {
+            return QVariant();
+        }
+
+        QJniObject window = activity.callObjectMethod(
+            "getWindow",
+            "()Landroid/view/Window;"
+            );
+
+        if (!window.isValid()) {
+            return QVariant();
+        }
+
+        constexpr jint FLAG_KEEP_SCREEN_ON = 0x00000080;
+
+        window.callMethod<void>(
+            "clearFlags",
+            "(I)V",
+            FLAG_KEEP_SCREEN_ON
+            );
+
+        qDebug() << "KeepAwake: normal screen timeout restored";
+        return QVariant();
+    });
 }

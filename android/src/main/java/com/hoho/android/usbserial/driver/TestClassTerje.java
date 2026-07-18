@@ -85,6 +85,13 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
     private final boolean withIoManager = true; // event-driven ON
     private final Handler mainLooper;
     private final Context mcontext;
+
+    // USB permission request state
+    private int pendingPortNum = -1;
+    private int pendingDeviceId = -1;
+    private boolean usbPermissionReceiverRegistered = false;
+    private boolean usbPermissionStatus = false;
+
     private static int[] used = new int[5];
     private static String[] _serialnum = { "", "", "", "", "" };
     private static boolean _first = true;
@@ -113,9 +120,143 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
     private void status(String s) { Log.d(TAG, s); }
 
     public TestClassTerje(Context contextIn) {
-        this.mcontext = contextIn;
+        /*
+         * Use the application context so this long-lived object does not retain
+         * an Activity instance.
+         */
+        Context applicationContext = contextIn.getApplicationContext();
+        this.mcontext =
+                applicationContext != null ? applicationContext : contextIn;
+
         this.mainLooper = new Handler(Looper.getMainLooper());
+
+        registerUsbPermissionReceiver();
     }
+
+    private void registerUsbPermissionReceiver() {
+        if (usbPermissionReceiverRegistered) {
+            return;
+        }
+
+        IntentFilter filter = new IntentFilter(INTENT_ACTION_GRANT_USB);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                mcontext.registerReceiver(
+                        usbPermissionReceiver,
+                        filter,
+                        Context.RECEIVER_NOT_EXPORTED
+                );
+            } else {
+                mcontext.registerReceiver(
+                        usbPermissionReceiver,
+                        filter
+                );
+            }
+
+            usbPermissionReceiverRegistered = true;
+            status("USB permission receiver registered");
+
+        } catch (Exception e) {
+            status("Failed to register USB permission receiver: "
+                    + e.getMessage());
+        }
+    }
+
+    private void unregisterUsbPermissionReceiver() {
+        if (!usbPermissionReceiverRegistered) {
+            return;
+        }
+
+        try {
+            mcontext.unregisterReceiver(usbPermissionReceiver);
+        } catch (IllegalArgumentException ignore) {
+            // Receiver was already unregistered.
+        } catch (Exception e) {
+            status("Failed to unregister USB permission receiver: "
+                    + e.getMessage());
+        } finally {
+            usbPermissionReceiverRegistered = false;
+        }
+    }
+
+    /**
+     * Call this from C++ when the Java serial object is permanently destroyed.
+     * Do not call it for an ordinary temporary disconnect.
+     */
+    public void release() {
+        disconnect();
+        //unregisterUsbPermissionReceiver();
+        nativeHandle = 0;
+    }
+
+    private final BroadcastReceiver usbPermissionReceiver =
+            new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!INTENT_ACTION_GRANT_USB.equals(intent.getAction())) {
+                return;
+            }
+
+            UsbDevice device;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                device = intent.getParcelableExtra(
+                        UsbManager.EXTRA_DEVICE,
+                        UsbDevice.class
+                );
+            } else {
+                device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+            }
+
+            boolean permissionGranted = intent.getBooleanExtra(
+                    UsbManager.EXTRA_PERMISSION_GRANTED,
+                    false
+            );
+
+            if (device == null) {
+                status("USB permission result did not contain a device");
+                usbPermission = UsbPermission.Unknown;
+                pendingPortNum = -1;
+                pendingDeviceId = -1;
+                return;
+            }
+
+            // Ignore a permission result belonging to an older request.
+            if (pendingDeviceId != -1 &&
+                    device.getDeviceId() != pendingDeviceId) {
+                status("Ignoring USB permission result for another device");
+                return;
+            }
+
+            int portToOpen = pendingPortNum;
+
+            pendingPortNum = -1;
+            pendingDeviceId = -1;
+
+            if (!permissionGranted) {
+                usbPermission = UsbPermission.Denied;
+                status("USB permission denied");
+                try {
+                    nativeOnSerialError("USB permission denied");
+                } catch (Throwable ignore) {
+                }
+                return;
+            }
+
+            usbPermission = UsbPermission.Granted;
+            status("USB permission granted");
+            usbPermissionStatus = true;
+
+            /*
+             * requestPermission() is asynchronous. Now that permission has
+             * actually been granted, call connect() again to open the device.
+             */
+            if (portToOpen >= 0) {
+                connect(portToOpen);
+            }
+        }
+    };
 
     // ---------------------- Public API (called from C++) ----------------------
 
@@ -133,6 +274,13 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
         synchronized (qLock) { return rxQueue.poll(); }
     }
 
+    public String usbpremission() {
+        Boolean x = usbPermissionStatus;
+        status("Debug USB: " + x);
+        String xval = Boolean.toString(x);
+        return String.valueOf(xval);
+    }
+
     /** Connect by numeric port index (0..n). */
     public String getconnected(int port, int baudrate) {
         this.TAG = "USBLOG_" + port;
@@ -145,8 +293,11 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
     public String connectserial(String serial, int baudrate) {
         this.TAG = "USBLOG_" + serial;
         this.baudRate = baudrate;
-        connects(serial);
-        return String.valueOf(connected);
+        status("Debug 1: " + serial);
+//        connects(serial);
+        int stat = connect(Integer.parseInt(serial));
+        String xval = Integer.toString(stat);
+        return String.valueOf(xval);
     }
 
     // ---------------------- SerialInputOutputManager.Listener -----------------
@@ -184,25 +335,41 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
         return s.replace("\u200B", "").replace("\uFEFF", "");
     }
 
-    private void buildSerialNumbers(){
+    private void buildSerialNumbers() {
         status("TERJE::: build serial");
-        for (int i = 0; i <= 5; i++) {
+
+        for (int i = 0; i < _serialnum.length; i++) {
             connect(i);
+
             if (connected) {
                 _serialnum[i] = serialNum;
-                status(String.format(Locale.US, "Device serial: '%s'", _serialnum[i]));
+
+                status(String.format(
+                        Locale.US,
+                        "Device serial: '%s'",
+                        _serialnum[i]
+                ));
+
                 disconnect();
             }
         }
     }
 
     private void connects(String targetSerial) {
-        for (int i = 0; i <= 5; i++) {
+        for (int i = 0; i < _serialnum.length; i++) {
             String a = norm(targetSerial);
             String b = norm(_serialnum[i]);
-            status(String.format(Locale.US, "Compare serial: '%s' vs '%s'", a, b));
+
+            status(String.format(
+                    Locale.US,
+                    "Compare serial: '%s' vs '%s'",
+                    a,
+                    b
+            ));
+
             if (Objects.equals(a, b)) {
                 connect(i);
+
                 if (connected) {
                     return;
                 }
@@ -210,70 +377,203 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
         }
     }
 
+    private void findall() {
+        for (int i = 0; i < _serialnum.length; i++) {
+            String b = norm(_serialnum[i]);
+
+            status(String.format(
+                    Locale.US,
+                    "Found serial: '%s'",
+                    b
+            ));
+        }
+    }
+
 // ---------------------- Connection management -----------------------------
 
-    private void connect(int portNum) {
-        UsbDevice device = null;
-        UsbManager usbManager = (UsbManager) mcontext.getSystemService(Context.USB_SERVICE);
+    private int connect(int portNum) {
+        final int requestedPortNum = portNum;
 
-        for (UsbDevice v : usbManager.getDeviceList().values()) {
-            if (v.getDeviceId() > deviceId1 && v.getDeviceId() < deviceId2) {
+        if (connected) {
+            status("already connected");
+            return 0;
+        }
+
+        UsbManager usbManager =
+                (UsbManager) mcontext.getSystemService(Context.USB_SERVICE);
+
+        if (usbManager == null) {
+            status("connection failed: UsbManager unavailable");
+            return -1;
+        }
+
+        UsbDevice device = null;
+
+        for (UsbDevice candidate : usbManager.getDeviceList().values()) {
+            if (candidate.getDeviceId() > deviceId1 &&
+                    candidate.getDeviceId() < deviceId2) {
+
                 if (portNum == 0) {
-                    device = v;
+                    device = candidate;
                     break;
                 }
+
                 portNum--;
             }
         }
-        if (device == null) { status("connection failed: device not found"); return; }
 
-        UsbSerialDriver driver = UsbSerialProber.getDefaultProber().probeDevice(device);
-        if (driver == null) driver = CustomProber.getCustomProber().probeDevice(device);
-        if (driver == null) { status("connection failed: no driver for device"); return; }
+        if (device == null) {
+            status("connection failed: device not found");
+            return -2;
+        }
+
+        UsbSerialDriver driver =
+                UsbSerialProber.getDefaultProber().probeDevice(device);
+
+        if (driver == null) {
+            driver = CustomProber.getCustomProber().probeDevice(device);
+        }
+
+        if (driver == null) {
+            status("connection failed: no driver for device");
+            return -3;
+        }
+
+        if (driver.getPorts().isEmpty()) {
+            status("connection failed: driver contains no ports");
+            return -4;
+        }
+
+        /*
+         * Do not call openDevice() before permission exists.
+         *
+         * requestPermission() returns immediately. Android later delivers the
+         * result to usbPermissionReceiver.
+         */
+        if (!usbManager.hasPermission(device)) {
+            if (usbPermission != UsbPermission.Requested ||
+                    pendingDeviceId != device.getDeviceId()) {
+
+                usbPermission = UsbPermission.Requested;
+                pendingPortNum = requestedPortNum;
+                pendingDeviceId = device.getDeviceId();
+
+                Intent permissionResultIntent =
+                        new Intent(INTENT_ACTION_GRANT_USB);
+
+                permissionResultIntent.setPackage(
+                        mcontext.getPackageName()
+                );
+
+                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    flags |= PendingIntent.FLAG_MUTABLE;
+                }
+
+                PendingIntent usbPermissionIntent =
+                        PendingIntent.getBroadcast(
+                                mcontext,
+                                device.getDeviceId(),
+                                permissionResultIntent,
+                                flags
+                        );
+
+                status("requesting USB permission for port "
+                        + requestedPortNum);
+
+                usbManager.requestPermission(
+                        device,
+                        usbPermissionIntent
+                );
+            } else {
+                status("USB permission request already pending");
+//                return -6;
+            }
+
+            return -5;
+        }
+
+        usbPermission = UsbPermission.Granted;
+        pendingPortNum = -1;
+        pendingDeviceId = -1;
+
+        UsbDeviceConnection usbConnection =
+                usbManager.openDevice(device);
+
+        if (usbConnection == null) {
+            status(
+                    !usbManager.hasPermission(device)
+                            ? "permission denied"
+                            : "openDevice failed"
+            );
+            return -7;
+        }
 
         usbSerialPort = driver.getPorts().get(0);
-        UsbDeviceConnection usbConnection = usbManager.openDevice(driver.getDevice());
-
-        if (usbConnection == null && usbPermission == UsbPermission.Unknown && !usbManager.hasPermission(driver.getDevice())) {
-            usbPermission = UsbPermission.Requested;
-            int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_MUTABLE : 0;
-            Intent intent = new Intent(INTENT_ACTION_GRANT_USB);
-            intent.setPackage(mcontext.getPackageName());
-            PendingIntent usbPermissionIntent = PendingIntent.getBroadcast(mcontext, 0, intent, flags);
-            usbManager.requestPermission(driver.getDevice(), usbPermissionIntent);
-            return;
-        }
-        if (usbConnection == null) {
-            status(!usbManager.hasPermission(driver.getDevice()) ? "permission denied" : "open failed");
-            return;
-        }
 
         try {
             usbSerialPort.open(usbConnection);
             getInfo(driver);
 
             try {
-                usbSerialPort.setParameters(baudRate, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE);
+                usbSerialPort.setParameters(
+                        baudRate,
+                        8,
+                        UsbSerialPort.STOPBITS_1,
+                        UsbSerialPort.PARITY_NONE
+                );
             } catch (UnsupportedOperationException e) {
-                status("setParameters unsupported: " + e.getMessage());
+                status("setParameters unsupported: "
+                        + e.getMessage());
             }
 
             if (withIoManager) {
-                usbIoManager = new SerialInputOutputManager(usbSerialPort, this);
+                usbIoManager =
+                        new SerialInputOutputManager(
+                                usbSerialPort,
+                                this
+                        );
+
                 usbIoManager.start();
             }
 
             connected = true;
-            g_portNum = portNum;
+
+            /*
+             * Store the original requested port number. The local portNum
+             * variable was decremented while searching for the device.
+             */
+            g_portNum = requestedPortNum;
+
             usbSerialPort.setDTR(true);
-            status("connected");
-            try { nativeOnConnected(true); } catch (Throwable ignore) {}
+
+            status("connected to port " + requestedPortNum);
+
+            try {
+                nativeOnConnected(true);
+            } catch (Throwable ignore) {
+            }
 
         } catch (Exception e) {
             status("connection failed: " + e.getMessage());
+
+            /*
+             * If UsbSerialPort.open() failed, its connection might not have
+             * been adopted by the port implementation.
+             */
+            if (usbSerialPort == null) {
+                try {
+                    usbConnection.close();
+                } catch (Exception ignore) {
+                }
+            }
+
             disconnect();
         }
+        return 1;
     }
+
 
     private void getInfo(UsbSerialDriver driver) {
         UsbDevice usbDev = driver.getDevice();
@@ -287,39 +587,71 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
     }
 
     private void disconnect() {
-        if (!connected && usbIoManager == null && usbSerialPort == null) return;
+        boolean wasConnected = connected;
 
         connected = false;
 
         if (usbIoManager != null) {
-            usbIoManager.setListener(null);
-            usbIoManager.stop();
+            try {
+                usbIoManager.setListener(null);
+                usbIoManager.stop();
+            } catch (Exception ignore) {
+            }
+
             usbIoManager = null;
         }
+
         if (usbSerialPort != null) {
-            try { usbSerialPort.close(); } catch (IOException ignore) {}
+            try {
+                usbSerialPort.close();
+            } catch (IOException ignore) {
+            } catch (Exception ignore) {
+            }
+
             usbSerialPort = null;
         }
-        usbPermission = UsbPermission.Unknown;
 
-        try { nativeOnConnected(false); } catch (Throwable ignore) {}
-        try { Thread.sleep(100); } catch (InterruptedException ignore) {}
+        /*
+         * This only resets the Java request state. Android's granted USB
+         * permission remains valid until the device is detached.
+         */
+        if (usbPermission != UsbPermission.Requested) {
+            usbPermission = UsbPermission.Unknown;
+            pendingPortNum = -1;
+            pendingDeviceId = -1;
+        }
+
+        if (wasConnected) {
+            try {
+                nativeOnConnected(false);
+            } catch (Throwable ignore) {
+            }
+        }
+
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     // ---------------------- Raw send (bytes) ---------------------------------
 
     private int send(byte[] data) {
         if (!connected) {
-            status("not connected");
+            status("TERJE::: not connected");
             try {
                 disconnect();
                 Thread.sleep(100);
                 connect(g_portNum);
                 Thread.sleep(100);
-            } catch (Exception e) { status("send reconnect failed: " + e.getMessage()); }
-            return -1;
+            } catch (Exception e) {
+                status("TERJE::: send reconnect failed: " + e.getMessage());
+                return -1;
+            }
         }
         try {
+          //  status("Sending: " + data.toString());
             usbSerialPort.write(data, WRITE_WAIT_MILLIS);
             return data.length;
         } catch (Exception e) {

@@ -46,5 +46,6 @@
         <file>images/zero.png</file>
         <file>images/radar_4.png</file>
         <file>images/imageB.png</file>
+        <file>images/angle.png</file>
     </qresource>
 </RCC>

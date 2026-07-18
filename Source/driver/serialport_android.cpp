@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QTimer>
+#include <QThread>
 #include <QByteArray>
 #include <QMetaObject>
 
@@ -37,17 +38,31 @@ Java_com_hoho_android_usbserial_driver_TestClassTerje_nativeOnSerialBytes(
 
     QByteArray bytes;
     bytes.resize(n);
-    env->GetByteArrayRegion(jdata, 0, n,
-                            reinterpret_cast<jbyte*>(bytes.data()));
+    env->GetByteArrayRegion(jdata, 0, n, reinterpret_cast<jbyte*>(bytes.data()));
 
+    if (self->callback_) {
+        self->callback_(self->parent, bytes,bytes.length());
+    }
+
+/*
+    connect(self, &ComQt::dataReceived,
+            this, [](const QByteArray &bytes) {
+                qDebug() << "Received:" << bytes;
+                qDebug() << "As text:" << QString::fromLatin1(bytes);
+            });
+    emit self->dataReceived(bytes);
+*/
+/*
     QMetaObject::invokeMethod(self, [self, b = std::move(bytes)]() {
+        qDebug() << "received::::0";
         if (self->callback_) {
+            qDebug() << "received::::1";
             self->callback_(self->parent, b.constData(),
                             static_cast<uint32_t>(b.size()));
         }
         emit self->dataReceived(b);
     }, Qt::QueuedConnection);
-
+*/
 }
 
 // void nativeOnConnected(boolean connected)
@@ -130,16 +145,39 @@ bool ComQt::open(const QString& portName, qint32 baudrate)
     someJavaObject->callMethod<void>("setNativeHandle", "(J)V", self);
 
     // Call: String connectserial(String serial, int baudrate)
+    QString stat = "";
     const QJniObject jSerial = QJniObject::fromString(portName);
     const QString status = someJavaObject->callMethod<jstring>(
         "connectserial",
         "(Ljava/lang/String;I)Ljava/lang/String;",
         jSerial.object(),
         jint(baudrate)).toString();
+    stat = status;
 
-    qDebug() << "connect-serial status:" << status;
+    qDebug() << "connect-serial status:" << stat;
 
-    if (status == QLatin1String("true")) {
+    if (stat == QLatin1String("-5")) {
+        QString usb = "false";
+        while (usb != QLatin1String("true")) {
+            const QString usblegal = someJavaObject->callMethod<jstring>(
+                                                      "usbpremission").toString();
+            usb = usblegal;
+            QThread::msleep(100);  // Wait 100 milliseconds
+            qDebug() << "USB-status:" << usblegal;
+        }
+
+        const QString statusx = someJavaObject->callMethod<jstring>(
+                                                  "connectserial",
+                                                  "(Ljava/lang/String;I)Ljava/lang/String;",
+                                                  jSerial.object(),
+                                                  jint(baudrate)
+                                                  ).toString();
+
+        stat = statusx;
+        qDebug() << "connect-serial status:" << statusx;
+    }
+
+    if (stat == QLatin1String("1") || stat == QLatin1String("0")) {
         // Get device info
         const QString serialnumber = someJavaObject->callObjectMethod(
                                                        "getInfo", "()Ljava/lang/String;").toString();

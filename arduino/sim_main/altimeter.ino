@@ -155,7 +155,7 @@ void altimeter_setup()
     delay(1000);
 
     // Hard restart to recover (ESP platform)
-    ESP.restart();
+//    ESP.restart();
   }
 }
 
@@ -329,6 +329,7 @@ static void altitude_handle_data(char dta)
  */
 void altimeter_loop()
 {
+  static int altsim = 100;
   const float alpha = 0.050f;        // Low-pass filter smoothing factor
   static int calibrate = 0;          // Used to trigger one-time startup calibration
 
@@ -354,12 +355,19 @@ void altimeter_loop()
   float altitude = pressureToAltitudeNEW(filteredPressValue, filteredTempValue);
   float relative = getRelativeAltitude(filteredPressValue, filteredTempValue);
 
+  if (SIMULATE == true) { 
+    altitude = altsim;
+    altsim= altsim+10;
+    if(altsim > 5000) altsim= 100;
+  }
+
   // Format and transmit CSV message
-  String s = String("Altimeter,") +
+  String s = String("ALTIMETER,") +
              String(filteredPressValue, 4) + "," +
              String(filteredTempValue,  4) + "," +
-             String(relative,          4) + "," +
-             String(altitude,          4) +
+             String(relative,          4)  + "," +
+             String(altitude,          4)  + "," +
+             String(sensorValue,       4),
              String("\n");
 
   for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
@@ -368,7 +376,7 @@ void altimeter_loop()
     }
   }
 
-  if(MAX_SRV_CLIENTS == 0)
+  if(serverClients[0] == 0)
     Serial.print(s);
 
   delay(200);

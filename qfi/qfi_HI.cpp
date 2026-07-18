@@ -124,14 +124,15 @@ void qfi_HI::init()
 
     reset();
 
-    _itemFace = new QGraphicsSvgItem( ":/qfi/images/hi/hi_face.svg" );
+    _itemFace = new QGraphicsSvgItem( ":/qfi/images/hi/angle.svg" );
+//    _itemFace = new QGraphicsSvgItem( ":/qfi/images/hi/hi_face.svg" );
     _itemFace->setCacheMode( QGraphicsItem::NoCache );
     _itemFace->setZValue( _faceZ );
     _itemFace->setTransform( QTransform::fromScale( _scaleX, _scaleY ), true );
     _itemFace->setTransformOriginPoint( _originalHsiCtr );
     _scene->addItem( _itemFace );
 
-    _itemCase = new QGraphicsSvgItem( ":/qfi/images/hi/hi_case.svg" );
+    _itemCase = new QGraphicsSvgItem( ":/qfi/images/hi/arrow.svg" );
     _itemCase->setCacheMode( QGraphicsItem::NoCache );
     _itemCase->setZValue( _caseZ );
     _itemCase->setTransform( QTransform::fromScale( _scaleX, _scaleY ), true );

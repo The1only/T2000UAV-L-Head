@@ -103,14 +103,14 @@ MainWindow::MainWindow(QWidget *parent)
 
 
 #if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-    helper = new KeepAwakeHelper();
-    helper->EnableKeepAwakeHelper();
+//    helper = new KeepAwakeHelper();
+//    helper->EnableKeepAwakeHelper();
 #endif
 
     // --------------------------------
     // Setup the Radio List...
     double temp_g=0.0;
-    qDebug() << "Reading files...";
+    qDebug() << "Reading files..." << QString(LOG_DIR) << QString(RADIO);
     QString blob1;
     {
         QFile *l_file = new QFile(QString(LOG_DIR)+ QString(RADIO));
@@ -166,9 +166,7 @@ MainWindow::MainWindow(QWidget *parent)
     // The serial ports shuld be a parameter to the constructor...
     // The m_calibrate shuld be set in a different manner...
     // Remember that the MyTcpSocket spawns a slower process only...
-    mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->getVal, &this->setIMU);
-    // This must come fast to make sure it is set before the serialports are open.
-    mysocket->setSerialPorts(_IMU_id, _transponder_id, _radar_id, _AirSpeed_id, _Altitude_id);
+    this->mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->getVal, &this->setIMU);
 
     QThread::msleep(1000);
 
@@ -186,7 +184,7 @@ MainWindow::MainWindow(QWidget *parent)
     ekf.ekf->Gval       = temp_g;
     ekf.ekf_quart->Gval = temp_g;
     ekf.Gval            = temp_g;
-    mysocket->G   = temp_g;
+    this->mysocket->G   = temp_g;
     qDebug() << "Saved G value is: " << temp_g;
 
     // Whenever the location data source signals that the current
@@ -201,22 +199,11 @@ MainWindow::MainWindow(QWidget *parent)
     }
     // ------------------------------
 
-    qDebug() << "  setmode  ";
-    setmode(0);
+    qDebug() << "  setmode standby ";
+    setmode(1);
 
     qDebug() << "  m_timer  ";
     m_timer.start();
-
-    m_Clock = new QTimer(this);
-    m_Clock->setSingleShot(false);
-    connect(m_Clock, SIGNAL(timeout()), this, SLOT(doClock()));
-    m_Clock->start(1000);
-
-    qDebug() << "  timerAlt  ";
-    timerAlt = new QTimer(this);
-    timerAlt->setSingleShot(false);
-    connect(timerAlt, SIGNAL(timeout()), this, SLOT(doCheck()));
-    timerAlt->start(5000);
 
     qDebug() << "  timerPing  ";
     timerPing = new QTimer(this);
@@ -225,13 +212,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     qDebug() << "  timerActive ";
     timerActive = new QTimer(this);
-    timerActive->setSingleShot(false);
+    timerActive->setSingleShot(true);
     connect(timerActive, SIGNAL(timeout()), this, SLOT(active_ping()));
 
     qDebug() << "  timerPictureActive ";
     timertakePicture = new QTimer(this);
     timertakePicture->setSingleShot(false);
     connect(timertakePicture, SIGNAL(timeout()), this, SLOT(takePicture()));
+
+    qDebug() << "  timerAlt  ";
+    timerAlt = new QTimer(this);
+    timerAlt->setSingleShot(false);
+    connect(timerAlt, SIGNAL(timeout()), this, SLOT(doCheck()));
+    timerAlt->start(5000);
 
     QString data = "System booted at: "+QDateTime::currentDateTime().toString();
     ui->listView->appendPlainText(data);
@@ -323,15 +316,16 @@ MainWindow::MainWindow(QWidget *parent)
     // Save the current index page...
     currentIndex = ui->stackedWidget->currentIndex();
 
-    m_msgBox = new NoButtonMessageBox(tr("Please wait for the system to boot!"));
-    m_msgBox->show();
-
     showImage();
+
+
+    m_msgBox = new NoButtonMessageBox(tr("Please wait for the system to boot!"));
+ //   m_msgBox->show();
 
     qDebug() << "  Booting step two...  " << currentIndex << " Index";
 
     //Bøverbru.fpl
-    QString flightplan = IMAGES_DIR+QString("/Bøverbru.gpx");
+    QString flightplan = IMAGES_DIR+QString("/Boverbru.gpx");
     GpxParser parser;
     static QList<TrackPoint> points;
     if (parser.parseFile(flightplan))
@@ -344,10 +338,19 @@ MainWindow::MainWindow(QWidget *parent)
             //qDebug() << pt.elevation << pt.latitude << pt.longitude << pt.name;
         }
     }
+
+    // Start the clock....
+    qDebug() << "  doClock  ";
+    m_Clock = new QTimer(this);
+    m_Clock->setSingleShot(false);
+    connect(m_Clock, SIGNAL(timeout()), this, SLOT(doClock()));
+    m_Clock->start(1000);
+
 }
 
 MainWindow::~MainWindow()
 {
+ //   helper->DisableKeepAwakeHelper();
     qDebug() << "Exiting...";
     qApp->closeAllWindows();
 }
@@ -453,11 +456,11 @@ void MainWindow::setIMU(void *parent, bool use_imu)
         {
             qDebug() << "Found a external sensor QPressureSensor";
             local->ui->radioButton_3->setChecked(true);
-
+/*
             // If we got both a preassure sensor and the Transponder ...
             if( local->mysocket->Transponderstat == true)
             {
-                local->mysocket->readyWrite((char*)"d=s\r\n");
+                local->mysocket->readyWrite((char*)"\x02" "d=s" "\x03");
                 local->mysocket->TransponderstatWithBarometer = true;
 
                 QString x = local->ui->use_built_inn_barometer->styleSheet();
@@ -466,6 +469,7 @@ void MainWindow::setIMU(void *parent, bool use_imu)
                 local->ui->use_built_inn_barometer->setStyleSheet(x);
                 local->ui->use_built_inn_barometer->update();
             }
+*/
         }
 
         for (const QByteArray &type : QSensor::sensorTypes())
@@ -492,9 +496,10 @@ void MainWindow::setIMU(void *parent, bool use_imu)
                     local->ui->radioButton_3->setChecked(true);
 
                     // If we got both a preassure sensor and the Transponder ...
+                    /*
                     if( local->mysocket->Transponderstat == true)
                     {
-                        local->mysocket->readyWrite((char*)"d=s\r\n");
+                        local->mysocket->readyWrite((char*)"\x02" "d=s" "\x03");
                         local->mysocket->TransponderstatWithBarometer = true;
 
                         QString x = local->ui->use_built_inn_barometer->styleSheet();
@@ -503,6 +508,7 @@ void MainWindow::setIMU(void *parent, bool use_imu)
                         local->ui->use_built_inn_barometer->setStyleSheet(x);
                         local->ui->use_built_inn_barometer->update();
                     }
+*/
                 }
             }
 
@@ -644,7 +650,7 @@ void MainWindow::setIMU(void *parent, bool use_imu)
 
     #if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
         //local->helper = new KeepAwakeHelper();
-        //local->helper->EnableKeepAwakeHelper();
+    //    local->helper->EnableKeepAwakeHelper();
     #endif
 
     //    local->m_msgBox->hide();
@@ -719,10 +725,10 @@ void MainWindow::updateCameras()
 void MainWindow::setCamera(const QCameraDevice &cameraDevice)
 {
 #if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-    if(helper){
-        delete helper;
-        helper = nullptr;
-    }
+//    if(helper){
+//        delete helper;
+//        helper = nullptr;
+//    }
 #endif
 
     m_cameraDevic = new QCameraDevice(cameraDevice);
@@ -824,21 +830,59 @@ void MainWindow::doClock()
 {
     static int tim = 0;
 
-    if(!(++tim % 10)){
-        static double lastTemp = -1;
-        if(lastTemp != mysocket->Temp)
-        {
+    if(this->mysocket != nullptr){
+        if(!(++tim % 10)){
+            static double lastTemp = -1;
+            if(lastTemp != mysocket->Temp)
+            {
 
-            uint8_t major = (mysocket->VER  >> 8) & 0xFF;
-            uint8_t minor = mysocket->VER  & 0xFF;
-          //  printf("Firmware Version: %d.%d\n", major, minor);
+            //    uint8_t major = (mysocket->VER  >> 8) & 0xFF;
+            //    uint8_t minor = mysocket->VER  & 0xFF;
+            //    printf("Firmware Version: %d.%d\n", major, minor);
 
-            ui->plainTextEdit_2->setPlainText(
-//            ui->plainTextEdit_2->appendPlainText(
-//                QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss ") +
-                QString("IMU Ver: %1.%2\nTemp: %3").arg(major).arg(minor).arg( mysocket->Temp)
-                );
-            lastTemp = mysocket->Temp;
+//              ui->plainTextEdit_2->appendPlainText(
+                this->ui->plainTextEdit_2->setPlainText(
+                    QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss "));
+
+//                ui->plainTextEdit_2->setPlainText(
+//                    QString("IMU Ver: %1.%2\nTemp: %3").arg(major).arg(minor).arg( mysocket->Temp));
+                lastTemp = mysocket->Temp;
+            }
+        }
+
+        // If we are in the air...
+        if(m_takeoff){
+            ui->timeEdit_2->setTime(QTime::fromMSecsSinceStartOfDay(m_timer.elapsed()));
+            // Have we landed...
+            if(mysocket->m_speed <= 5.0)
+            {
+                m_takeoff = false;
+                logLanded();
+            }
+        }
+        else{
+            /*
+            double alt = this->mysocket->m_altitude;
+
+            // If we are usimng GPS the forse it to be set...
+            if(!this->ui->radioButton_2->isChecked()){
+                if( this->mysocket->m_pressure_raw > 1.0 )
+                {
+                    alt = this->mysocket->m_preasure_alt;
+                }
+            }
+*/
+            // If more than 40Km/t we are taking off...
+            if( mysocket->m_speed > 40.0 )
+            {
+                m_takeoff = true;
+
+                this->takeoff_latitude  = this->mysocket->m_latitude;
+                this->takeoff_longitude = this->mysocket->m_longitude;
+                this->takeoff_altitude  = this->mysocket->m_altitude;
+
+                logTakeoff();
+            }
         }
     }
 
@@ -846,39 +890,6 @@ void MainWindow::doClock()
 //      ui->label_UTC->setText(QDateTime::currentDateTime().toString("hh:mm:ss") );
     ui->timeEdit->setDateTime(QDateTime::currentDateTime());
 
-    // If we are in the air...
-    if(m_takeoff){
-        ui->timeEdit_2->setTime(QTime::fromMSecsSinceStartOfDay(m_timer.elapsed()));
-        // Have we landed...
-        if(mysocket->m_speed <= 5.0)
-        {
-            m_takeoff = false;
-            logLanded();
-        }
-    }
-    else{
-        double alt = this->mysocket->m_altitude;
-
-        // If we are usimng GPS the forse it to be set...
-        if(!this->ui->radioButton_2->isChecked()){
-            if( this->mysocket->m_pressure_raw > 1.0 )
-            {
-                alt = this->mysocket->m_preasure_alt;
-            }
-        }
-
-        // If more than 40Km/t we are taking off...
-        if( mysocket->m_speed > 40.0 )
-        {
-            m_takeoff = true;
-
-            this->takeoff_latitude  = this->mysocket->m_latitude;
-            this->takeoff_longitude = this->mysocket->m_longitude;
-            this->takeoff_altitude  = this->mysocket->m_altitude;
-
-            logTakeoff();
-        }
-    }
 
 // Calculate meters/s ...
 #define varfilterlength 4
@@ -1597,12 +1608,12 @@ void MainWindow::onReadingChanged()
         static int memory = 0;
         static std::deque<float> dq = {0};
         static std::deque<float> sq = {0};
-        static int lastDetection = 0;
+        //static int lastDetection = 0;
         int scale = Radar_Height / 100;
 
-      //  if(lastDetection != mysocket->rPos)
+        //if(lastDetection != mysocket->rPos)
         {
-            lastDetection = mysocket->rPos;
+        //    lastDetection = mysocket->rPos;
             dq.push_back(20.0+(mysocket->rDist*scale));
             sq.push_back(20.0+(mysocket->rSpeed*scale));
             if(++memory >= Radar_depth)
@@ -1637,7 +1648,7 @@ void MainWindow::onReadingChanged()
 
                 _widgetALT->redraw();
 
-                if(mysocket->Airspeed_data.airspeed > -1){
+                if(this->mysocket->Airspeed_data.airspeed > -1){
                     // If we got airspeed then change display to airspeed...
                     if(!_widgetASI->getver()){
                         _widgetASI->reinit(1);
@@ -1801,7 +1812,7 @@ void MainWindow::onReadingChanged()
                 // Example points series (memory, dq, sq in scene units)
                 for (int i = 0; i < memory-1; ++i) {
                     qreal height_pos = dq[i]+20;
-                    qreal speed_pos  = sq[i];
+                //    qreal speed_pos  = sq[i];
 
                     qreal x = left + i * 8;          // 6 scene units per step
                     m_graphScen->addLine(x, bottom - height_pos, x + 7, bottom - height_pos,
@@ -2118,7 +2129,7 @@ void MainWindow::onReadingChanged()
 
 void MainWindow::reset_ping()
 {
-    qDebug() << "  reset_ping  ";
+    qDebug() << ":::Ping timeout";
     QString x;
     x = ui->pushButton_10->styleSheet();
     x.replace(QString("1 #090"), QString("1 #900"));
@@ -2126,27 +2137,31 @@ void MainWindow::reset_ping()
     ui->pushButton_10->update();
 }
 
+// Timeout on the transponder port...
 void MainWindow::active_ping()
 {
-    qDebug() << "  reset_active  ";
     QString x;
     x = ui->pushButton_14->styleSheet();
     x.replace(QString("1 #090"), QString("1 #900"));
     ui->pushButton_14->setStyleSheet(x);
     ui->pushButton_14->update();
+    this->timerActive->stop();
 }
 
 void MainWindow::doCheck()
 {
-    QString x = ui->pushButton_11->styleSheet();
     if ( alt_receiced == false)
     {
+        QString x = ui->pushButton_11->styleSheet();
         x.replace(QString("1 #090"), QString("1 #900"));
+        ui->pushButton_11->setStyleSheet(x);
+        ui->pushButton_11->update();
     }else{
+        QString x = ui->pushButton_11->styleSheet();
         x.replace(QString("1 #900"), QString("1 #090"));
+        ui->pushButton_11->setStyleSheet(x);
+        ui->pushButton_11->update();
     }
-    ui->pushButton_11->setStyleSheet(x);
-    ui->pushButton_11->update();
     alt_receiced = false;
 }
 
@@ -2158,227 +2173,322 @@ void MainWindow::setalt(int alt_mode)
 
 void MainWindow::getVal(void *parent, const char *data, uint32_t length) //const QByteArray &array)
 {
+    static bool bussy = false;
     static char buffer[30];
     static int pos = 0;
     MainWindow* saved_this= (MainWindow*) parent;
     Ui::SCREEN* local_ui  = saved_this->ui;
 
-//    qDebug() << array;
+    if(bussy == false){
+        bussy = true;
 
-    for(uint32_t i=0; i < length;i++)
-    {
-        if(data[i] == '*')
+    //    qDebug() << array;
+
+        for(uint32_t i=0; i < length;i++)
         {
-            QString x = local_ui->pushButton_10->styleSheet();
-            x.replace(QString("1 #900"), QString("1 #090"));
-            local_ui->pushButton_10->setStyleSheet(x);
-            local_ui->pushButton_10->update();
-            saved_this->timerPing->stop();
-            saved_this->timerPing->start(10000); // Turn off in 10 sec...
-           // qDebug() << "Ping received...";
-
-            // Log all commands... This might be slow... will look at a timed write...
-            QFile *l_file = new QFile(QString(LOG_DIR)+ QString(TRANSPONDERLOG));
-            if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
+            if(data[i] == '*')
             {
-                QString data = QDateTime::currentDateTime().toString()+": "+"Ping received...\n";
-                l_file->write(data.toLocal8Bit());
-                l_file->close();
-            }
-        }
+                QMetaObject::invokeMethod(saved_this, [saved_this]() {
 
-        if(data[i] < 0x1F || pos >= (int)sizeof(buffer))
-        {
-            if(pos >= 3)
-            {
+                    QString x = saved_this->ui->pushButton_10->styleSheet();
+                    x.replace(QString("1 #900"), QString("1 #090"));
+                    saved_this->ui->pushButton_10->setStyleSheet(x);
+                    saved_this->ui->pushButton_10->update();
+                    saved_this->timerPing->start(10000);
+                }, Qt::QueuedConnection);
+
                 // Log all commands... This might be slow... will look at a timed write...
                 QFile *l_file = new QFile(QString(LOG_DIR)+ QString(TRANSPONDERLOG));
                 if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
                 {
-                    QString data = QDateTime::currentDateTime().toString()+": "+buffer+"\n";
+                    QString data = QDateTime::currentDateTime().toString()+": "+"Ping received...\n";
                     l_file->write(data.toLocal8Bit());
                     l_file->close();
                 }
-
-                // Make the flash activity...
-                {
-                    QString x = local_ui->pushButton_14->styleSheet();
-                    x.replace(QString("1 #900"), QString("1 #090"));
-                    local_ui->pushButton_14->setStyleSheet(x);
-                    local_ui->pushButton_14->update();
-                    saved_this->timerActive->start(10000); // Turn off in 10 sec...
-                }
-
-                switch (buffer[0])
-                {
-                    case 's':
-                    {
-                        QString x;
-                        x = local_ui->pushButton_off->styleSheet();
-                        x.replace(QString("1 #2A0"), QString("1 #888"));
-                        local_ui->pushButton_off->setStyleSheet(x);
-                        local_ui->pushButton_norm->setStyleSheet(x);
-                        local_ui->pushButton_stby->setStyleSheet(x);
-                        local_ui->pushButton_alt->setStyleSheet(x);
-                        x.replace(QString("1 #888"), QString("1 #2A0"));
-
-                        switch(buffer[2])
-                        {
-                            case 'o':
-                                local_ui->pushButton_off->setStyleSheet(x);
-                                saved_this->mode = 0;
-                                break;
-
-                            case 't':
-                                local_ui->pushButton_stby->setStyleSheet(x);
-                                saved_this->mode = 1;
-                                break;
-
-                            case 'a':
-                                local_ui->pushButton_norm->setStyleSheet(x);
-                                saved_this->mode = 2;
-                                break;
-
-                            case 'c':
-                                local_ui->pushButton_alt->setStyleSheet(x);
-                                saved_this->mode = 3;
-                                break;
-
-                        }
-                        break;
-                    }
-                    case 'r':
-                    {
-                        bool state=true;
-                        if (buffer[2] == 'N') state = false;
-
-                        QString x = tr("Annunciator %1").arg(state);
-                        break;
-                    }
-                    case 'i':
-                    {
-                        bool state;
-                        if (buffer[2] == '0') state = false;
-                        else state = true;
-
-                        QString x = local_ui->pushButton_Ident->styleSheet();
-
-                        if ( state == false)
-                        {
-                            x.replace(QString("1 #900"), QString("1 #888"));
-                        }else{
-                            x.replace(QString("1 #888"), QString("1 #900"));
-                        }
-                        local_ui->pushButton_Ident->setStyleSheet(x);
-                        local_ui->pushButton_Ident->update();
-                        break;
-                    }
-
-                    case 'c':
-                    {
-                        int number;
-                        char numout[5];
-                        sscanf(buffer,"c=%d",&number);
-                        snprintf(numout,5,"%.4d",number);
-
-                        saved_this->current[3]=numout[3]-0x30;
-                        saved_this->current[2]=numout[2]-0x30;
-                        saved_this->current[1]=numout[1]-0x30;
-                        saved_this->current[0]=numout[0]-0x30;
-
-                        local_ui->lcdNumber->display(QString::number( saved_this->current[0]*1000+
-                                                                     saved_this->current[1]*100+
-                                                                     saved_this->current[2]*10+
-                                                                     saved_this->current[3]).rightJustified(4, '0'));
-                        break;
-                    }
-                    case 'a':
-                    {
-                        float number;
-                        char numout[20];
-                        sscanf(buffer,"a=%f",&number);
-                        QString altType="Alt.Ft.";
-
-                        if(saved_this->alt_mode == 1)
-                        {
-                            for (unsigned long key=0; key < strlen(buffer); key++)
-                            {
-                                if(buffer[key]=='M')
-                                {
-                                    number*=3.2808399;
-                                    break;
-                                }
-                            }
-                            saved_this->m_tansALT = round(number/100.0)*100;
-                        }
-                        else{
-                            for (unsigned long key=0; key < strlen(buffer); key++)
-                            {
-                                if(buffer[key]=='F')
-                                {
-                                    number/=3.2808399;
-                                    break;
-                                }
-                            }
-                            saved_this->m_tansALT = round(number);
-                            altType="Alt.M.";
-                        }
-                        snprintf(numout,20,"%.4d",(int)saved_this->m_tansALT);
-                        local_ui->lcdNumber_3->display(numout);
-                        local_ui->label_2->setText(altType);
-//                        local_ui->baro_alt->setText(numout);
-                        saved_this->alt_receiced = true;
-                        break;
-                    }
-
-                    case 'z':
-                    {
-                        qDebug() << "T: %s\r\n" << &buffer[2];
-                        local_ui->plainTextEdit->appendPlainText(&buffer[2]);
-                        break;
-                    }
-
-                    case 'p':
-                    {
-                        qDebug() << "P: %s\r\n" << &buffer[2];
-
-                        bool state=true;
-                        if (buffer[2] == '1') state = false;
-
-                        QString x = tr("Hardware test status: %1").arg(state);
-                        local_ui->plainTextEdit->appendPlainText(x);
-
-                        // ...
-                        if(state == true)
-                        {
-                            x = local_ui->pushButton_10->styleSheet();
-                            x.replace(QString("1 #900"), QString("1 #090"));
-                            local_ui->pushButton_10->setStyleSheet(x);
-                            local_ui->pushButton_10->update();
-                            saved_this->timerPing->stop();
-                            saved_this->timerPing->start(5000); // Turn off in 5 sec...
-                        }
-                        else
-                        {
-                            x = local_ui->pushButton_10->styleSheet();
-                            x.replace(QString("1 #090"), QString("1 #900"));
-                            local_ui->pushButton_10->setStyleSheet(x);
-                            local_ui->pushButton_10->update();
-                        }
-                        break;
-                    }
-                }
             }
-            pos = 0;
 
-        }
-        else{
-            if(data[i] >= 0x1F)
+    //        if(data[i] < 0x1F || pos >= (int)sizeof(buffer))
+            if(data[i] == 0x03 || pos >= (int)sizeof(buffer))
             {
-                buffer[pos++]=data[i];
-                buffer[pos]=0;
+                if(pos >= 3)
+                {
+                    // Log all commands... This might be slow... will look at a timed write...
+                    QFile *l_file = new QFile(QString(LOG_DIR)+ QString(TRANSPONDERLOG));
+                    if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
+                    {
+                        buffer[pos+1]=0;
+                        QString datalog = QDateTime::currentDateTime().toString()+": "+buffer+"\n";
+                        l_file->write(datalog.toLocal8Bit());
+                        l_file->close();
+                    }
+
+                    // Make the flash activity...
+                    {
+                        QMetaObject::invokeMethod(saved_this, [saved_this]() {
+                            QString x = saved_this->ui->pushButton_14->styleSheet();
+                            if (x.contains("#900")) {
+                                x.replace("1 #900", "1 #090");
+                                saved_this->ui->pushButton_14->setStyleSheet(x);
+                                saved_this->ui->pushButton_14->update();
+                            }
+                            saved_this->timerActive->start(5000);
+                        }, Qt::QueuedConnection);
+                    }
+
+                    switch (buffer[0])
+                    {
+                        case 's':
+                        {
+                            auto setButtonActive = [](QPushButton *button, bool active)
+                            {
+                                QString style = button->styleSheet();
+                                qDebug() << style;
+
+                                if (active) {
+                                    // Only change if it is currently inactive
+                                    if (style.contains("1 #888")) {
+                                        style.replace("1 #888", "1 #2A0");
+                                        button->setStyleSheet(style);
+                                        button->update();
+                                        QThread::msleep(100);
+                                    }else{
+
+                                    }
+                                } else {
+                                    // Only change if it is currently active
+                                    if (style.contains("1 #2A0")) {
+                                        style.replace("1 #2A0", "1 #888");
+                                        button->setStyleSheet(style);
+                                        button->update();
+                                        QThread::msleep(100);
+                                    }
+                                }
+                            };
+
+                            int newMode = saved_this->mode;
+
+                            switch (buffer[2])
+                            {
+                            case 't':   newMode = 1;    break;
+                            case 'a':   newMode = 2;    break;
+                            case 'c':   newMode = 3;    break;
+                            default:                    break;
+                            }
+
+                            // Only do anything if the mode actually changed
+                            if (newMode != saved_this->mode){
+                                setButtonActive(local_ui->pushButton_stby, newMode == 1);
+                                setButtonActive(local_ui->pushButton_norm, newMode == 2);
+                                setButtonActive(local_ui->pushButton_alt,  newMode == 3);
+                                saved_this->mode = newMode;
+                            }
+                            break;
+
+
+
+
+
+
+
+
+
+                            /*
+                            QString x;
+                            x = local_ui->pushButton_off->styleSheet();
+                            x.replace(QString("1 #2A0"), QString("1 #888"));
+
+                            switch(saved_this->mode){
+                            case 0:
+                                local_ui->pushButton_off->setStyleSheet(x);
+                                saved_this->ui->pushButton_off->update();
+                                break;
+                            case 1:
+                                local_ui->pushButton_stby->setStyleSheet(x);
+                                saved_this->ui->pushButton_stby->update();
+                                break;
+                            case 2:
+                                local_ui->pushButton_norm->setStyleSheet(x);
+                                saved_this->ui->pushButton_norm->update();
+                                break;
+                            case 3:
+                                local_ui->pushButton_alt->setStyleSheet(x);
+                                saved_this->ui->pushButton_alt->update();
+                                break;
+
+                            }
+
+                            x.replace(QString("1 #888"), QString("1 #2A0"));
+
+                            switch(buffer[2])
+                            {
+                                case 'o':
+                                    local_ui->pushButton_off->setStyleSheet(x);
+                                    saved_this->ui->pushButton_off->update();
+                                    saved_this->mode = 0;
+                                    break;
+
+                                case 't':
+                                    local_ui->pushButton_stby->setStyleSheet(x);
+                                    saved_this->ui->pushButton_stby->update();
+                                    saved_this->mode = 1;
+                                    break;
+
+                                case 'a':
+                                    local_ui->pushButton_norm->setStyleSheet(x);
+                                    saved_this->ui->pushButton_norm->update();
+                                    saved_this->mode = 2;
+                                    break;
+
+                                case 'c':
+                                    local_ui->pushButton_alt->setStyleSheet(x);
+                                    saved_this->ui->pushButton_alt->update();
+                                    saved_this->mode = 3;
+                                    break;
+
+                                default:
+                                    break;
+
+                            }
+                            break;
+                            */
+                        }
+                        case 'r':
+                        {
+                            bool state=true;
+                            if (buffer[2] == 'N') state = false;
+
+                            QString x = tr("Annunciator %1").arg(state);
+                            break;
+                        }
+                        case 'i':
+                        {
+                            bool state;
+                            if (buffer[2] == '0') state = false;
+                            else state = true;
+
+                            QString x = local_ui->pushButton_Ident->styleSheet();
+
+                            if ( state == false)
+                            {
+                                x.replace(QString("1 #900"), QString("1 #888"));
+                            }else{
+                                x.replace(QString("1 #888"), QString("1 #900"));
+                            }
+                            local_ui->pushButton_Ident->setStyleSheet(x);
+                            local_ui->pushButton_Ident->update();
+                            break;
+                        }
+
+                        case 'c':
+                        {
+                            int number;
+                            char numout[5];
+                            sscanf(buffer,"c=%d",&number);
+                            snprintf(numout,5,"%.4d",number);
+
+                            saved_this->current[3]=numout[3]-0x30;
+                            saved_this->current[2]=numout[2]-0x30;
+                            saved_this->current[1]=numout[1]-0x30;
+                            saved_this->current[0]=numout[0]-0x30;
+
+                            local_ui->lcdNumber->display(QString::number( saved_this->current[0]*1000+
+                                                                         saved_this->current[1]*100+
+                                                                         saved_this->current[2]*10+
+                                                                         saved_this->current[3]).rightJustified(4, '0'));
+                            break;
+                        }
+                        case 'a':
+                        {
+                            float number;
+                            char numout[20];
+                            sscanf(buffer,"a=%f",&number);
+                            QString altType="Alt.Ft.";
+
+                            if(saved_this->alt_mode == 1)
+                            {
+                                for (unsigned long key=0; key < strlen(buffer); key++)
+                                {
+                                    if(buffer[key]=='M')
+                                    {
+                                        number*=3.2808399;
+                                        break;
+                                    }
+                                }
+                                saved_this->m_tansALT = round(number/100.0)*100;
+                            }
+                            else{
+                                for (unsigned long key=0; key < strlen(buffer); key++)
+                                {
+                                    if(buffer[key]=='F')
+                                    {
+                                        number/=3.2808399;
+                                        break;
+                                    }
+                                }
+                                saved_this->m_tansALT = round(number);
+                                altType="Alt.M.";
+                            }
+                            snprintf(numout,20,"%.4d",(int)saved_this->m_tansALT);
+                            local_ui->lcdNumber_3->display(numout);
+                            local_ui->label_2->setText(altType);
+    //                        local_ui->baro_alt->setText(numout);
+                            saved_this->alt_receiced = true;
+                            break;
+                        }
+
+                        case 'z':
+                        {
+                            qDebug() << "T: %s\r\n" << &buffer[2];
+                            local_ui->plainTextEdit->appendPlainText(&buffer[2]);
+                            break;
+                        }
+
+                        case 'p':
+                        {
+                            qDebug() << "P: %s\r\n" << &buffer[2];
+
+                            bool state=true;
+                            if (buffer[2] == '1') state = false;
+
+                            QString x = tr("Hardware test status: %1").arg(state);
+                            local_ui->plainTextEdit->appendPlainText(x);
+
+                            // ...
+                            if(state == true)
+                            {
+                                x = local_ui->pushButton_10->styleSheet();
+                                x.replace(QString("1 #900"), QString("1 #090"));
+                                local_ui->pushButton_10->setStyleSheet(x);
+                                local_ui->pushButton_10->update();
+                                saved_this->timerPing->stop();
+                                saved_this->timerPing->start(5000); // Turn off in 5 sec...
+                            }
+                            else
+                            {
+                                x = local_ui->pushButton_10->styleSheet();
+                                x.replace(QString("1 #090"), QString("1 #900"));
+                                local_ui->pushButton_10->setStyleSheet(x);
+                                local_ui->pushButton_10->update();
+                            }
+                            break;
+                        }
+                    }
+                }
+                pos = 0;
+
+            }
+            else{
+                if(data[i] != 0x02)  //>= 0x1F)
+                {
+                    buffer[pos++]=data[i];
+                    buffer[pos]=0;
+                }
+                else{
+                    pos = 0;
+                }
             }
         }
+        bussy = false;
     }
 }
 
@@ -2419,13 +2529,13 @@ void MainWindow::setmode(int m)
     if(mysocket != NULL)
     {
         switch(m){
-        case 0: mysocket->readyWrite((char*)"s=?\r\n"); break;
-        case 1: mysocket->readyWrite((char*)"s=t\r\n"); break;
-        case 2: mysocket->readyWrite((char*)"s=a\r\n"); break;
-        case 3: mysocket->readyWrite((char*)"s=c\r\n"); break;
+        case 0: mysocket->readyWrite((char*)"\x02" "s=?" "\x03"); break;
+        case 1: mysocket->readyWrite((char*)"\x02" "s=t" "\x03"); break;
+        case 2: mysocket->readyWrite((char*)"\x02" "s=a" "\x03"); break;
+        case 3: mysocket->readyWrite((char*)"\x02" "s=c" "\x03"); break;
         }
     }
-    mode = m;
+   // mode = m;
 }
 
 void MainWindow::on_pushButton_clicked(  ){addnext(1);}
@@ -2450,7 +2560,7 @@ void MainWindow::on_pushButton_16_clicked()
     this->current[0]=this->next[0];
 
     char data[100];
-    snprintf(data,100,"c=%d\r\n",this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]);
+    snprintf(data,100,"\x02" "c=%d" "\x03",this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]);
     //    QString num = QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]);
     //    QString msg = QString("c=%1\r\n").arg(num);
     qDebug() << data;
@@ -2469,7 +2579,7 @@ void MainWindow::on_pushButton_18_clicked()
     ui->lcdNumber_2->display( num);
 
     char data[100];
-    snprintf(data,100,"c=%d\r\n",7000);
+    snprintf(data,100,"\x02" "c=%d" "\x03",7000);
     qDebug() << data;
 
     mysocket->readyWrite(data);
@@ -2478,7 +2588,7 @@ void MainWindow::on_pushButton_18_clicked()
 
 void MainWindow::on_pushButton_Ident_clicked()
 {
-    mysocket->readyWrite((char*)"i=s\r\n");
+    mysocket->readyWrite((char*)"\x02" "i=s" "\x03");
 }
 
 // Set mode...
@@ -2490,7 +2600,7 @@ void MainWindow::on_pushButton_12_clicked(){setalt(0);}
 void MainWindow::on_pushButton_13_clicked(){setalt(1);}
 
 void MainWindow::on_pushButton_off_clicked(){
-    mysocket->readyWrite((char*)"p=?\r\n");
+    mysocket->readyWrite((char*)"\x02" "p=?" "\x03");
 }
 
 //-------------------------------------------------------------
@@ -2731,28 +2841,6 @@ int MainWindow::get_default_config(Matrix3x6 &sensor)
                     sensor[2][5] = element[12].toDouble();
                     found++;
                 }
-/*
-                if(element[0] == "TRANSPONDER")
-                {
-                    _transponder_id = element[1];
-                    found++;
-                }
-                if(element[0] == "RADAR")
-                {
-                    _radar_id = element[1];
-                    found++;
-                }
-                if(element[0] == "IMU")
-                {
-                    _IMU_id = element[1];
-                    found++;
-                }
-*/
-                /*
-                for(QString val : element){
-                    qDebug()<< val;
-                }
-                */
             }
             if(found == 6) return 0;
         }
@@ -2766,15 +2854,10 @@ int MainWindow::set_default_config(const Matrix3x6 &sensor)
     QString txt = "AccelCal,X1,%1,Y1,%2,Z1,%3,X2,%4,Y2,%5,Z2,%6\n";
     txt.append(   "GyroCal,X,%7,Y,%8,Z,%9,X2,%10,Y2,%11,Z2,%12\n");
     txt.append(   "MagCal,X,%13,Y,%14,Z,%15,X2,%16,Y2,%17,Z2,%18\n");
-    txt.append(   "TRANSPONDER,%19\n");
-    txt.append(   "RADAR,%20\n");
-    txt.append(   "IMU,%21\n");
 
     QString data  =  txt.arg(sensor[0][0]).arg(sensor[0][1]).arg(sensor[0][2]).arg(sensor[0][3]).arg(sensor[0][4]).arg(sensor[0][5])
                         .arg(sensor[1][0]).arg(sensor[1][1]).arg(sensor[1][2]).arg(sensor[1][3]).arg(sensor[1][4]).arg(sensor[1][5])
-                        .arg(sensor[2][0]).arg(sensor[2][1]).arg(sensor[2][2]).arg(sensor[2][3]).arg(sensor[2][4]).arg(sensor[2][5])
-                        .arg(_transponder_id).arg(_radar_id).arg(_IMU_id);
-
+                       .arg(sensor[2][0]).arg(sensor[2][1]).arg(sensor[2][2]).arg(sensor[2][3]).arg(sensor[2][4]).arg(sensor[2][5]);
 
     QFile *l_file = new QFile(QString(LOG_DIR)+ QString(CONFIG));
     if( l_file->open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -3033,21 +3116,33 @@ void MainWindow::on_use_built_inn_barometer_clicked()
     static bool active = false;
     QString x = ui->use_built_inn_barometer->styleSheet();
 
-    if(active == false)
-    {
-        active = true;
-        mysocket->TransponderstatWithBarometer = true;
-        x.replace(QString("1 #080"), QString("1 #800"));
-        ui->use_built_inn_barometer->setText("Use Built In\nbarometer");
+    if(mysocket->m_pressure_raw > 1.0 ){
+        if(active == false)
+        {
+            active = true;
+            mysocket->TransponderstatWithBarometer = true;
+            x.replace(QString("1 #080"), QString("1 #800"));
+            ui->use_built_inn_barometer->setText("Use Built In\nbarometer");
 
-    }
-    else{
-        active = false;
-        mysocket->TransponderstatWithBarometer = false;
-        x.replace(QString("1 #800"), QString("1 #080"));
-        ui->use_built_inn_barometer->setText("Use External\nbarometer");
-    }
+            if( mysocket->Transponderstat == true)
+            {
+                mysocket->readyWrite((char*)"\x02" "d=s" "\x03");
+            }
 
-    ui->use_built_inn_barometer->setStyleSheet(x);
-    ui->use_built_inn_barometer->update();
+        }
+        else{
+            active = false;
+            mysocket->TransponderstatWithBarometer = false;
+            x.replace(QString("1 #800"), QString("1 #080"));
+            ui->use_built_inn_barometer->setText("Use External\nbarometer");
+
+            if( mysocket->Transponderstat == true)
+            {
+                mysocket->readyWrite((char*)"\x02" "d=g" "\x03");
+            }
+        }
+
+        ui->use_built_inn_barometer->setStyleSheet(x);
+        ui->use_built_inn_barometer->update();
+    }
 }

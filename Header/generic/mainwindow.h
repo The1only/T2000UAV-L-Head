@@ -329,14 +329,6 @@ public:
     /// Current index of stacked widget.
     int currentIndex = 0;
 
-    // ------------------------------------------------------------------
-    // Default USB serial numbers / IDs (SIM vs REAL)
-    // ------------------------------------------------------------------
-    QString _transponder_id = "Transponder";
-    QString _radar_id       = "Radar";   ///< Default radar ID (SIM).
-    QString _IMU_id         = "Imu";         ///< REAL
-    QString _AirSpeed_id    = "Airspeed";
-    QString _Altitude_id    = "Altitude";
     /**
      * @brief C callback from MyTcpSocket when IMU presence is known.
      *
@@ -481,6 +473,7 @@ private:
     double m_roll          = 0.0;
     double m_yaw           = 0.0;
 
+    QTimer *timerTRANS = nullptr; ///< Transponder polling timer.
 
     /// Calibration message box during IMU calibration.
     NoButtonMessageBox *m_msgBoxCalibrating = nullptr;

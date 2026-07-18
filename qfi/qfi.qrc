@@ -68,5 +68,8 @@
         <file>images/vsi/vsi_hand.svg</file>
         <file>../images/test1.png</file>
         <file>images/asi/asi_face_airspeed.svg</file>
+        <file>images/hi/angle.svg</file>
+        <file>images/hi/angle.png</file>
+        <file>images/hi/arrow.svg</file>
     </qresource>
 </RCC>

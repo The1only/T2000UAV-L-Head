@@ -6,15 +6,21 @@
 #include <QtCore/private/qandroidextras_p.h>
 #include <QJniObject>
 
-class KeepAwakeHelper
-{
-public:
-    KeepAwakeHelper();
-    void EnableKeepAwakeHelper();
-    virtual ~KeepAwakeHelper();
 
-private:
-    QJniObject m_wakeLock;
+class KeepAwakeHelper
+
+{
+
+public:
+
+    KeepAwakeHelper();
+
+    ~KeepAwakeHelper();
+
+    void EnableKeepAwakeHelper();
+
+    void DisableKeepAwakeHelper();
+
 };
 
 #endif // LOCKHELPER_H

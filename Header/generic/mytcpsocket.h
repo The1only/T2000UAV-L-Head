@@ -29,6 +29,8 @@
 #else
     #undef  USE_BT_IMU
 #endif
+//#undef  USE_BT_IMU
+
 
 #ifdef Q_OS_IOS
 #undef Q_OS_MAC
@@ -47,8 +49,10 @@
 // Android: main window layout
 //#define SCREEN MainWindow_port_new
 //#include "ui_mainwindow_port_new.h"
+
 #define SCREEN MainWindow_port_small
 #include "ui_mainwindow_port_small.h"
+
 #include "lockhelper.h"
 #define simGPS false
 
@@ -219,6 +223,12 @@ public:
     /// Callback invoked when serial data arrives from transponder.
     void (*ret_transponder)(void *, const char *data, uint32_t size) = nullptr;
 
+    /// Callback invoked when serial data arrives from transponder.
+    static void ret_airspeed(void *, const char *data, uint32_t size);
+
+    /// Callback invoked when serial data arrives from transponder.
+    static void ret_altimeter(void *, const char *data, uint32_t size);
+
     /**
      * @brief Try to connect and initialize the transponder.
      *
@@ -267,13 +277,15 @@ public:
      * Radar, with status dialogs along the way.
      */
     void connectedAltitude();
+    void connectedAltitudeSerial();
 
-        /**
+    /**
      * @brief Try to connect and initialize RADAR (Net or USB).
      *
      * Radar, with status dialogs along the way.
      */
-    void connectedAirspeed();
+    void connectedAirspeed();    
+    void connectedAirSpeedSerial();
 
     /**
      * @brief Android: periodically bump external display backlight to max.
@@ -281,17 +293,6 @@ public:
      * No-op on non-Android platforms.
      */
     void setbacklit();
-
-    /**
-     * @brief Configure which devices to look for by "serial ID" or logical ID.
-     *
-     * On macOS this is typically the USB serial number mapped to /dev/tty device.
-     *
-     * @param imu          IMU/INS device identifier / serial number.
-     * @param transponder  Transponder device identifier / serial number.
-     * @param radar        Radar device identifier / serial number.
-     */
-    void setSerialPorts(QString imu, QString transponder, QString radar, QString AirSpeed, QString Altitude);
 
     /**
      * @brief Process an incoming MQTT message from the X-Plane bridge.
@@ -305,8 +306,8 @@ public:
     void handleUpdate(const std::string &ID, const std::string &value);
 
 
-    void parseAltimeterLine(const QString &line);
-    void parseAirspeedLine(const QString &line);
+    void parseAltimeterLine(MyTcpSocket *thiz, const QString &line);
+    void parseAirspeedLine( MyTcpSocket *thiz, const QString &line);
 
     AltimeterData Altimeter_data = {0,0,0,0};
     AirspeedData Airspeed_data = {0,0,0,0,0,-1};
@@ -322,7 +323,8 @@ public:
      *
      * @param useSystemLocation If true, map to systemLocation; else to portName.
      */
-    static QMap<QString, QString> serialToPortMap(bool useSystemLocation = true);
+    //static QMap<QString, QString> serialToPortMap(bool useSystemLocation = true);
+    QMap<QString, QString> serialToPortMap(bool useSystemLocation = true);
 
     /**
      * @brief Find port path for a given USB serial number.
@@ -362,12 +364,28 @@ public:
     /// Optional text log widget.
     QPlainTextEdit *text = nullptr;
 
-    /// Device identifiers (serial numbers / logical IDs).
-    QString _transponder_copy ="";
-    QString _radar_copy       ="";
-    QString _IMU_copy         ="";
-    QString _AirSpeed_copy    ="";
-    QString _Altitude_copy    ="";
+    // ------------------------------------------------------------------
+    // Default USB serial numbers / IDs (SIM vs REAL)
+    // ------------------------------------------------------------------
+    QString _transponder_copy = "Transponder";
+    QString _radar_copy       = "Radar";   ///< Default radar ID (SIM).
+    QString _IMU_copy         = "Imu";         ///< REAL
+    QString _AirSpeed_copy    = "Airspeed";
+    QString _Altitude_copy    = "Altitude";
+
+
+    // ------------------------------------------------------------------
+    // Default USB serial numbers / IDs (SIM vs REAL)
+    // ------------------------------------------------------------------
+    QString _transponder_id = "9c:13:9e:f2:45:e8";   ///< Default transponder ID (SIM).
+    //QString _transponder_id = "4150323833373205"; ///< REAL
+
+    //QString _radar_id       = "415032383337320B";   ///< Default radar ID (SIM).
+    // QString _radar_id       = "4150325537323317"; ///< REAL
+
+    //QString _IMU_id          = "4150323833373009";   ///< Default IMU ID (SIM).
+    //QString _IMU_id         = "FTHM2H8X";         ///< REAL
+    //QString _IMU_id         = "29987";
 
     // ---------------------------------------------------------------------
     // MQTT state
@@ -468,6 +486,7 @@ public:
     double Temp = -100.0;      ///< IMU temperature [°C].
 
     // GPS / altitude
+    double m_angle         = 0.0; ///< GPS altitude [feet] (geoid-compensated).
     double m_altitude      = -100.0; ///< GPS altitude [feet] (geoid-compensated).
     double m_latitude      = 0.0; ///< GPS latitude [deg].
     double m_longitude     = 0.0; ///< GPS longitude [deg].
@@ -494,8 +513,6 @@ public:
 
     int Orient = 0;            ///< Orientation mode / sensor orientation index.
 
-
-
     bool use_ins_only      = false;
 
 
@@ -509,6 +526,8 @@ private:
     ComQt *TransponderSerPort = nullptr; ///< Serial port for transponder.
     ComQt *RadarSerPort       = nullptr; ///< Serial port for radar.
     ComQt *INSSerPort         = nullptr; ///< Serial port for IMU/INS.
+    ComQt *AltimeterPort      = nullptr; ///< Serial port for radar.
+    ComQt *AirSpeedPort       = nullptr; ///< Serial port for radar.
  #if defined(USE_BT_IMU)
     ComBt *bluetootPort       = nullptr; ///< Bluetooth port for IMU.
  #endif
@@ -571,8 +590,8 @@ private:
     // ---------------------------------------------------------------------
     // Internal timers
     // ---------------------------------------------------------------------
-    QTimer *timer      = nullptr; ///< Generic timer (used elsewhere).
     QTimer *timerTRANS = nullptr; ///< Transponder polling timer.
+    QTimer *timer      = nullptr; ///< Generic timer (used elsewhere).
     QTimer *timerIMU   = nullptr; ///< IMU-related timer (if used).
     QTimer *java       = nullptr; ///< Android Java helper timer (if used).
     QTimer *timerStart = nullptr; ///< Startup state-machine timer.

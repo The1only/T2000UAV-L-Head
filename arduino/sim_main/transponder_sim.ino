@@ -103,7 +103,7 @@ static void write_to_transponder(char r)
             if(altsens == 'g') alt+=1;
           }else{
             sscanf(&output_buffer[2],"%i",&alt);                          
-        //    input_buffer_head = sprintf(input_buffer,"a= %dM\r\n",alt);
+            input_buffer_head = sprintf(input_buffer,"a= %dM\r\n",alt);
           }
         break;
         

@@ -28,28 +28,36 @@
 #include <Adafruit_BMP280.h>
 #include "esp_task_wdt.h"
 #define SIM true;
+#define USE_WIFI 
 
 #define SENSOR_RADAR 1
 #define SENSOR_IMU 2
 #define SENSOR_TRANSPONDER 3
 #define SENSOR_ALTIMETER 4
 #define SENSOR_AIRSPEED 5
+#define SENSOR_ANGLE 6
 
-#define SENSOR_V SENSOR_TRANSPONDER  // set this manually or with build flags
+#define SENSOR_V SENSOR_AIRSPEED  // set this manually or with build flags
+#define EXTRA_SENSOR_V SENSOR_ANGLE
+
 
 #if SENSOR_V == SENSOR_RADAR
 #define SENSOR "RADAR"  //              ///< Sensor identifier reported in SSDP USN
 #define ESP32S3
+
 #elif SENSOR_V == SENSOR_IMU
 #define SENSOR "IMU"  //              ///< Sensor identifier reported in SSDP USN
 #define ESP32C3
+
 #elif SENSOR_V == SENSOR_TRANSPONDER
 #define SENSOR "T2000U"  //              ///< Sensor identifier reported in SSDP USN
 #define SIM true;
 #define ESP32S3
+
 #elif SENSOR_V == SENSOR_ALTIMETER
 #define SENSOR "ALTIMETER"  //              ///< Sensor identifier reported in SSDP USN
 #define ESP32S3
+
 #elif SENSOR_V == SENSOR_AIRSPEED
 #define SENSOR "AIRSPEED"  //              ///< Sensor identifier reported in SSDP USN
 #define ESP32S3
@@ -89,6 +97,9 @@ U8G2_SSD1306_72X40_ER_F_HW_I2C u8g2(U8G2_R0, /* reset=*/U8X8_PIN_NONE);  // East
 
 bool SIMULATE = SIM;
 bool SerialStat = false;
+
+int sensorValue = 49999;  // variable to store the value coming from the angle sensor
+int sensorPin = A0;   // select the input pin for the potentiometer
 
 // -----------------------------------------------------------------------------
 // Timing / LED
@@ -198,64 +209,66 @@ void setup() {
 #endif
 
   // Initialize Task Watchdog
-//  esp_task_wdt_config_t wdt_config = {
-//    .timeout_ms = WDT_TIMEOUT * 1000,
-//    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  // watch both cores
-//    .trigger_panic = true                             // reset on timeout
-//  };
+  //  esp_task_wdt_config_t wdt_config = {
+  //    .timeout_ms = WDT_TIMEOUT * 1000,
+  //    .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,  // watch both cores
+  //    .trigger_panic = true                             // reset on timeout
+  //  };
   // esp_task_wdt_init(&wdt_config);
   // Add loop() task to watchdog
   // esp_task_wdt_add(NULL);
 
+#ifdef USE_WIFI
   loadStoredCredentials();
   addAccessPoints();
 
   Serial.println("Hitt a key to stop booting...");
   for (int i = 0; i < 5000; i++) {
     if (Serial.available()) {
-       Serial.println("Entering Config mode...");
-      while (handleSerialConfig() == false)
-        ;
+      Serial.println("Entering Config mode...");
+      while (handleSerialConfig() == false);
     }
+    if (SerialStat == true) break;
     delay(1);
   }
 
-  // --- optional one-time scan to verify SSID exists ---
-  do{
-    if(Serial.available()) {
-//    while (Serial.available() > 0) {
-//      char c = Serial.read();
-//      if (c == 'z') {
-        Serial.println(SENSOR);
+  if (SerialStat == false) {
+    // --- optional one-time scan to verify SSID exists ---
+    do {
+
+      if (Serial.available()) {
         SerialStat = true;
-//      }
-    }
-    if(SerialStat == true) break;
-
-    WiFi.onEvent(WiFiEvent);
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect(true);  // clear old connection
-    delay(100);
-
-    Serial.println("Scanning for networks...");
-    int n = WiFi.scanNetworks();
-    if (n <= 0) {
-      Serial.println("No networks found");
-    } else {
-      Serial.printf("%d networks found:\n", n);
-      for (int i = 0; i < n; ++i) {
-        Serial.printf("  %2d: %s (%d dBm)%s\n",
-                      i + 1,
-                      WiFi.SSID(i).c_str(),
-                      WiFi.RSSI(i),
-                      (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "" : " *");
+        break;
       }
-    }
-  }while(!connectWiFi());
 
-  ssdpUdp.beginMulticast(SSDP_MCAST_ADDR, SSDP_PORT);
-  server.begin();
-  server.setNoDelay(true);
+      WiFi.onEvent(WiFiEvent);
+      WiFi.mode(WIFI_STA);
+      WiFi.disconnect(true);  // clear old connection
+      delay(100);
+
+      Serial.println("Scanning for networks...");
+      int n = WiFi.scanNetworks();
+      if (n <= 0) {
+        Serial.println("No networks found");
+      } else {
+        Serial.printf("%d networks found:\n", n);
+        for (int i = 0; i < n; ++i) {
+          Serial.printf("  %2d: %s (%d dBm)%s\n",
+                        i + 1,
+                        WiFi.SSID(i).c_str(),
+                        WiFi.RSSI(i),
+                        (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "" : " *");
+        }
+      }
+    } while (!connectWiFi());
+
+    ssdpUdp.beginMulticast(SSDP_MCAST_ADDR, SSDP_PORT);
+    server.begin();
+    server.setNoDelay(true);
+  }
+#else
+  SerialStat = true;
+#endif
 
 #if SENSOR_V == SENSOR_RADAR
 #ifdef ESP32C3
@@ -285,7 +298,7 @@ void setup() {
 #else
   Serial1.begin(9600, SERIAL_8N1, 5, 4);  // Baud, format, RX pin, TX pin (check your board!)
 #endif
-//  imu_setup();
+                                            //  imu_setup();
   while (Serial1.available() > 0) {
     Serial1.read();
   }
@@ -305,7 +318,7 @@ void setup() {
 // Wi-Fi Credential Management (NVS)
 // -----------------------------------------------------------------------------
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-//  Serial.print("WiFiEvent:");
+  //  Serial.print("WiFiEvent:");
   if (Serial.available() > 0) return;
   if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
     Serial.print("DISCONNECTED reason=");
@@ -397,8 +410,7 @@ bool connectWiFi() {
       u8g2.sendBuffer();                                       // transfer internal memory to the display
 #endif
       return true;
-    }
-    else{
+    } else {
       if (Serial.available() > 0) {
         return false;
       }
@@ -458,17 +470,17 @@ void send_ssdp_blind() {
 
 
   char macStr[20];
-  sprintf(macStr, "%012llX", ESP.getEfuseMac());   // uppercase hex, 12 digits
+  sprintf(macStr, "%012llX", ESP.getEfuseMac());  // uppercase hex, 12 digits
 
   String resp =
     "NOTIFY * HTTP/1.1\r\n"
     "CACHE-CONTROL: max-age=60\r\n"
     "EXT:\r\n"
-    "ST: " + String(SSDP_ST) + "\r\n" + 
-    "USN: " + String(SENSOR) + "-" + macStr + "\r\n" + 
-    "LOCATION: " + location + "\r\n"
-    "SERVER: ESP32/1.0 UPnP/1.1 " + String(SENSOR) + "/1.0\r\n"
-    "\r\n";
+    "ST: "
+    + String(SSDP_ST) + "\r\n" + "USN: " + String(SENSOR) + "-" + macStr + "\r\n" + "LOCATION: " + location + "\r\n"
+                                                                                                              "SERVER: ESP32/1.0 UPnP/1.1 "
+    + String(SENSOR) + "/1.0\r\n"
+                       "\r\n";
 
   // Serial.println(resp);
   udp.print(resp);  // or some JSON payload
@@ -512,44 +524,46 @@ void handleTelnetToSerial(bool &activeFlag) {
 
 #if SENSOR_V == SENSOR_TRANSPONDER
   // Listen for USB serial command: 'v'
-  if(SerialStat == true){
+  if (SerialStat == true) {
     while (Serial.available() > 0) {
       char ch = Serial.read();
       if (SIMULATE == true) {
-          handle_data(ch);
-        } else {
-          Serial1.print((char)ch);
-        }
+        handle_data(ch);
+      } else {
+        Serial1.print((char)ch);
+      }
     }
   }
 #endif
 
-  for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
-    if (serverClients[i] && serverClients[i].connected()) {
-      while (serverClients[i].available()) {
-        char ch = serverClients[i].read();
-        activeFlag = true;
+  if (SerialStat == false) {
+    for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
+      if (serverClients[i] && serverClients[i].connected()) {
+        while (serverClients[i].available()) {
+          char ch = serverClients[i].read();
+          activeFlag = true;
 
 #if SENSOR_V == SENSOR_TRANSPONDER
-        if (SIMULATE == true) {
-          handle_data(ch);
-        } else {
-          Serial1.print((char)ch);
-        }
+          if (SIMULATE == true) {
+            handle_data(ch);
+          } else {
+            Serial1.print((char)ch);
+          }
 
 #elif SENSOR_V == SENSOR_IMU
-        if (SIMULATE == true) {
-          imu_handle_data(ch);
-        } else {
-          Serial1.print((char)ch);
-        }
+          if (SIMULATE == true) {
+            imu_handle_data(ch);
+          } else {
+            Serial1.print((char)ch);
+          }
 #elif SENSOR_V == SENSOR_RADAR
 // ..
 #elif SENSOR_V == SENSOR_AIRSPEED
 //..
 #elif SENSOR_V == SENSOR_ALTIMETER
-        altitude_handle_data(ch);
+//          altitude_handle_data(ch);
 #endif
+        }
       }
     }
   }
@@ -601,6 +615,8 @@ bool processSerialCommand(const String &line) {
   cmd.trim();
   if (cmd.length() == 0) return false;
 
+  //  Serial.print(cmd);
+
   if (cmd.equalsIgnoreCase("help")) {
     printHelp();
     return false;
@@ -613,6 +629,8 @@ bool processSerialCommand(const String &line) {
   }
 
   if (cmd.equalsIgnoreCase("z=?")) {
+    SerialStat = true;
+    Serial.println(SENSOR);
     return true;
   }
 
@@ -659,7 +677,7 @@ bool processSerialCommand(const String &line) {
     }
     String ssid = cmd.substring(s1 + 1, s2);
     String pass = cmd.substring(s2 + 1);
-//    ssid.replace('_', ' ');
+    //    ssid.replace('_', ' ');
     pass.replace('_', ' ');
 
     saveCredentials(ssid, pass);
@@ -686,6 +704,7 @@ bool handleSerialConfig() {
     if (c == '\n') {
       ret = processSerialCommand(serialLine);
       serialLine = "";
+      break;
     } else if (c != '\r') {
       serialLine += c;
     }
@@ -710,48 +729,37 @@ void loop() {
   static int sleep = 0;
   bool hasclient = false;
 
-#if SENSOR_V != SENSOR_TRANSPONDER
-  if(SerialStat== true){
-    // Listen for USB serial command: 'v'
-    while (Serial.available() > 0) {
-      char c = Serial.read();
-      if (c == 'z') {
-        Serial.println(SENSOR);
-      }
-    }
-  }
-#endif
-
-  if(SerialStat== false){
+  if (SerialStat == false) {
     if (wifiMulti.run() != WL_CONNECTED) {
       Serial.println("WiFi lost!");
       delay(50);
       //    esp_task_wdt_reset();
       return;
     }
-  }
 
-  // If there are client connected, then keep sending SSDP messages.
-  // The reason for this is tha tthe iPhone and iPad does not send SSDP requests, but can receive...
-  for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
-    if (serverClients[i] && serverClients[i].connected()) {
-      hasclient = true;
+    // If there are client connected, then keep sending SSDP messages.
+    // The reason for this is tha tthe iPhone and iPad does not send SSDP requests, but can receive...
+    for (int i = 0; i < MAX_SRV_CLIENTS; i++) {
+      if (serverClients[i] && serverClients[i].connected()) {
+        hasclient = true;
+      }
     }
-  }
 
-  if (!hasclient) {
-    static int td = 0;
-    if (tx - td > 2500) {
-      td = tx;
-      send_ssdp_blind();
+    if (!hasclient) {
+      static int td = 0;
+      if (tx - td > 2500) {
+        td = tx;
+        send_ssdp_blind();
+      }
     }
-  }
 
   handleSsdpReceive();
   acceptNewClients();
 
+  }
+
 #if SENSOR_V == SENSOR_RADAR
-    loopRADAR();
+  loopRADAR();
 /*  if (SIMULATE == false) {
     handleTelnetToSerial(active);
     handleSerialToTelnet();
@@ -781,6 +789,7 @@ void loop() {
   handleTelnetToSerial(active);
   altimeter_loop();
 #elif SENSOR_V == SENSOR_AIRSPEED
+  handleTelnetToSerial(active);
   airspeed_loop();
 #endif
 
@@ -802,5 +811,9 @@ void loop() {
   }
 #endif
 
+#if EXTRA_SENSOR_V == SENSOR_ANGLE
+  // read the value from the sensor:
+  sensorValue = analogRead(sensorPin);
+#endif
   //  esp_task_wdt_reset();
 }
