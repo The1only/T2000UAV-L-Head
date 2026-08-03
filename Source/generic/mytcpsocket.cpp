@@ -100,25 +100,24 @@ extern void AutoSetBaud(int);
  */
 MyTcpSocket::MyTcpSocket(QObject *parent,
                          QPlainTextEdit *s,
-                         void (*retx)(void *, const char *, uint32_t),
                          void (*rety)(void *, bool use_imu))
     : QObject(parent)
 {
-    this->ret_transponder   = retx;  // C callback for transponder data
     this->ret_imu  = rety;  // C callback to notify IMU status
     this->text     = s;
     this->parent   = parent;
+
+    // Now new app start...
+    QString datalog = QDateTime::currentDateTime().toString()+": New Log:";
+    this->logdata(this, QString(TRANSPONDERLOG), datalog);
+
 
     // ---------------------------------------------------------------------
     // Serial / Bluetooth COM objects
     // ---------------------------------------------------------------------
 #ifndef Q_OS_IOS
 
-    // Transponder serial port
-    TransponderSerPort = new ComQt(parent);
-    TransponderSerPort->setParent(this);
-    TransponderSerPort->setRxCallback(ret_transponder);             // register C callback
-
+#ifndef TRANSPONDER_ONLY
     // Radar serial port
     RadarSerPort = new ComQt(this);
     RadarSerPort->setParent(this);
@@ -129,15 +128,20 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
     INSSerPort->setParent(this);
     INSSerPort->setRxCallback(WitSerialDataIn);         // callback from WIT C SDK
 
-    // INS / IMU serial port
+    // Altimeter serial port
     AltimeterPort = new ComQt(this);
     AltimeterPort->setParent(this);
     AltimeterPort->setRxCallback(ret_altimeter);         // callback from WIT C SDK
 
-    // INS / IMU serial port
+    // Airspeed serial port
     AirSpeedPort = new ComQt(this);
     AirSpeedPort->setParent(this);
     AirSpeedPort->setRxCallback(ret_airspeed);         // callback from WIT C SDK
+
+    // AnglefAtac serial port
+    AnglePort = new ComQt(this);
+    AnglePort->setParent(this);
+    AnglePort->setRxCallback(ret_angle);         // callback from WIT C SDK
 
     // Bluetooth IMU port
  #if defined(USE_BT_IMU)
@@ -145,6 +149,12 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
     bluetootPort->setParent(this);
     bluetootPort->setRxCallback(WitSerialDataIn);       // callback from WIT C SDK
  #endif
+#endif
+
+    // Transponder serial port
+    TransponderSerPort = new ComQt(this);
+    TransponderSerPort->setParent(this);
+    TransponderSerPort->setRxCallback(ret_transponder);             // register C callback
 
     qDebug() << "Starting requester...";
     timerTRANS = new QTimer(this);
@@ -160,13 +170,16 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
 
     //-------------------------------------------------------------
     // Set up the multicast listern to find wlan sensors...
+#ifndef TRANSPONDER_ONLY
     ssdpConfig();
+#endif
 
     // ---------------------------------------------------------------------
     // MQTT setup (X-Plane / simulator input)
     // ---------------------------------------------------------------------
     // NOTE: Currently configured for localhost mosquitto / similar broker.
 //    SERVER_ADDRESS = std::string("tcp://localhost:1883");
+#ifdef USE_MQTT
     SERVER_ADDRESS = std::string("tcp://172.20.10.3:1883");
     CLIENT_ID      = std::string("transponder");
 
@@ -189,6 +202,7 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
     } catch (const mqtt::exception &e) {
         printf("MQTT publish error: %s\n", e.what());
     }
+#endif
 
     // ---------------------------------------------------------------------
     // Deferred startup using a timer (ensures constructor returns first)
@@ -207,10 +221,50 @@ MyTcpSocket::~MyTcpSocket()
 {
 #ifndef Q_OS_IOS
     TransponderSerPort->close();
+
+ #ifndef TRANSPONDER_ONLY
     RadarSerPort->close();
     INSSerPort->close();
+    AirSpeedPort->close();
+    AltimeterPort->close();
+ #endif
 #endif
     qDebug() << "Stopped socket...";
+}
+
+void MyTcpSocket::logdata(void* saved, QString logfile, QString datalog)
+{
+/*
+    QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(logDir);
+    QString logPath = logDir + logfile;
+    QFile file(logPath);
+*/
+//    this->text->appendPlainText(datalog);
+
+/*
+    datalog = datalog + "\n";
+
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+    {
+        const QByteArray data = datalog.toLocal8Bit();
+
+        if (file.write(data) == -1) {
+            QString logtxt = "Could not write log file: " + file.fileName()
+            + " Error code: " + QString::number(static_cast<int>(file.error()))
+                + " Error: " + file.errorString();
+            qWarning() << logtxt;
+        }
+        file.close();
+    }
+    else
+    {
+        QString logtxt = "Could not open log file: " + file.fileName()
+        +    " Error code: " + QString::number(static_cast<int>(file.error()))
+            + " Error: " + file.errorString();
+        qWarning() << logtxt;
+    }
+*/
 }
 
 /**
@@ -323,20 +377,23 @@ static void ret_test(void *userData, const char *data, uint32_t size)
     Q_UNUSED(userData);
     QByteArray bytes(data, static_cast<int>(size));
     QString response = QString::fromUtf8(data).trimmed();
-    if (response.contains("T2000U")) {
+    if (response.contains("T2000")) {
         portNum = "Transponder";
     }
-    if (response.contains("AIRSPEED")) {
+    else if (response.contains("AIRSPEED")) {
         portNum = "Airspeed";
     }
-    if (response.contains("ALTIMETER")) {
+    else if (response.contains("ALTIMETER")) {
         portNum = "Altitude";
     }
-    if (response.contains("RADAR")) {
+    else if (response.contains("RADAR")) {
         portNum = "Radar";
     }
-    if (response.contains("IMU")) {
+    else if (response.contains("IMU")) {
         portNum = "Imu";
+    }
+    else if (response.contains("ANGLE")) {
+        portNum = "Angle";
     }
     qDebug() << "Found device: " << portNum;
 }
@@ -419,7 +476,6 @@ QMap<QString, QString> MyTcpSocket::serialToPortMap(bool useSystemLocation)
 
                 // NÅ fungere Android men ikk MAC .....
             }
-
             TestSerPort->close();
             delete TestSerPort;
 
@@ -481,6 +537,11 @@ void MyTcpSocket::doStart()
     static int state = 0;
     timerStart->stop();
 
+#ifdef TRANSPONDER_ONLY
+    if (!Transponderstat){
+        connected();
+    }
+#else
     switch(state){
     case 0:
         disc->startDiscovery(5000);  // listen for 5 seconds
@@ -512,6 +573,10 @@ void MyTcpSocket::doStart()
         ++state;
         break;
     case 6:
+        connectedAngle();          // try to find & initialize IMU / INS
+        ++state;
+        break;
+    case 7:
         if(delay++ > 15){
             delay = 0;
             setbacklit();     // Android: periodically force bright backlight
@@ -534,6 +599,8 @@ void MyTcpSocket::doStart()
         */
         break;
     }
+    timerStart->start(500);
+#endif
 
     // ---------------------------------------------------------------------
     // Radar / IMU simulation (for debugging without hardware)
@@ -570,8 +637,6 @@ void MyTcpSocket::doStart()
     IMUconnected = true;
     Transponderstat = true;
 #endif  // SIMULATE_RADAR
-
-    timerStart->start(500);
 }
 
 // ============================================================================
@@ -629,10 +694,11 @@ void MyTcpSocket::connectedIMU()
     // callbacks = new Callbacks();   // Left as a placeholder if needed
 #endif
 
+#ifndef TRANSPONDER_ONLY
     // ---------------------------------------------------------------------
     // 1) Bluetooth IMU (WT901BLE67), if compiled with USE_BT_IMU
     // ---------------------------------------------------------------------
-#if defined(USE_BT_IMU)
+ #if defined(USE_BT_IMU)
 /*
     NoButtonMessageBox *m_msgBoxIMU = new NoButtonMessageBox(
         tr("Looking for Bluetooth device WT901BLE67 ..."));
@@ -673,12 +739,12 @@ void MyTcpSocket::connectedIMU()
      //   IMUconnected = false;
     }
 
-#endif  // USE_BT_IMU
+ #endif  // USE_BT_IMU
 
     // ---------------------------------------------------------------------
     // 2) USB IMU / INS device WTGAHRS3 (serial)
     // ---------------------------------------------------------------------
-#ifndef Q_OS_IOS
+ #ifndef Q_OS_IOS
     if (!IMUconnected)
     {
         QString IMU_name = findPort(_IMU_copy);
@@ -706,10 +772,10 @@ void MyTcpSocket::connectedIMU()
             }
         }
     }
-#endif  // !Q_OS_IOS
+ #endif  // !Q_OS_IOS
     // Notify IMU connection state through callback
     this->ret_imu(this->parent, IMUconnected);
-
+#endif
 }
 
 /**
@@ -758,17 +824,49 @@ void MyTcpSocket::connectedIMUWlan()
 
 void MyTcpSocket::connectedRadar()
 {
+#ifndef TRANSPONDER_ONLY
     // ---------------------------------------------------------------------
     // 3) Radar (USB serial and NET)
     // ---------------------------------------------------------------------
-#ifndef Q_OS_IOS
+ #ifndef Q_OS_IOS
     QString radar_name = findPort(_radar_copy);
     qDebug() << "Looking for Radar Port:" << radar_name;
     if (!radar_name.isEmpty() && RadarSerPort->open(radar_name, QSerialPort::Baud115200)) {
         Radarstat = true;
     }
+ #endif
 #endif
 }
+
+void MyTcpSocket::connectedAngle()
+{
+#ifndef TRANSPONDER_ONLY
+    // ---------------------------------------------------------------------
+    // 3) Radar (USB serial and NET)
+    // ---------------------------------------------------------------------
+ #ifndef Q_OS_IOS
+    QString angle_name = findPort(_angle_copy);
+    qDebug() << "Looking for Radar Port:" << angle_name;
+    if (!angle_name.isEmpty() && AnglePort->open(angle_name, QSerialPort::Baud115200)) {
+        Anglestat = true;
+    }
+ #endif
+#endif
+}
+
+/// Callback invoked when serial data arrives from angle sensor...
+void MyTcpSocket::ret_angle(void *host, const char *data, uint32_t size){
+    MyTcpSocket *thiz = (MyTcpSocket*)host;
+    QString text = QString::fromLatin1(data, static_cast<qsizetype>(size));
+    QStringList fields = text.split(QRegularExpression("[\r]"),Qt::SkipEmptyParts);
+    QStringList elements = fields[0].split(QRegularExpression("[,\n]"),Qt::SkipEmptyParts);
+
+    if(elements.size() >= 2){
+//        qDebug() << elements[1];
+        thiz->AngleSensor = elements[1].toFloat();
+    }
+}
+
 
 void MyTcpSocket::connectedRadarWlan()
 {
@@ -904,13 +1002,15 @@ void MyTcpSocket::connectedAltitude()
 
 void MyTcpSocket::connectedAltitudeSerial()
 {
-#ifndef Q_OS_IOS
+#ifndef TRANSPONDER_ONLY
+ #ifndef Q_OS_IOS
     QString port_name = findPort(_Altitude_copy);
     qDebug() << "Looking for Altimeter Port:" << port_name;
     if (!port_name.isEmpty() &&
         AltimeterPort->open(port_name, QSerialPort::Baud115200)) {
         Altitudestat = true;
     }
+ #endif
 #endif
 }
 
@@ -923,16 +1023,18 @@ void MyTcpSocket::ret_altimeter(void *host, const char *data, uint32_t size){
 
 void MyTcpSocket::connectedAirSpeedSerial()
 {
-#ifndef Q_OS_IOS
+#ifndef TRANSPONDER_ONLY
+ #ifndef Q_OS_IOS
     QString port_name = findPort(_AirSpeed_copy);
     qDebug() << "Looking for AirSpeed Port:" << port_name;
     if (!port_name.isEmpty() && AirSpeedPort->open(port_name, QSerialPort::Baud115200)) {
         Airspeedstat = true;
     }
+ #endif
 #endif
 }
 
-/// Callback invoked when serial data arrives from transponder.
+/// Callback invoked when serial data arrives from airspeed...
 void MyTcpSocket::ret_airspeed(void *host, const char *data, uint32_t size){
     MyTcpSocket *thiz = (MyTcpSocket*)host;
     QString text = QString::fromLatin1(data, static_cast<qsizetype>(size));
@@ -1129,6 +1231,7 @@ void MyTcpSocket::doTransponder()
     switch (state) {
     case 0:
         readyWrite(const_cast<char *>("\x02" "v=1" "\x03"));
+        readyWrite(const_cast<char *>("\x02" "d=g" "\x03"));
         break;
     case 1:
         readyWrite(const_cast<char *>("\x02" "z=?" "\x03"));
@@ -1388,6 +1491,105 @@ void MyTcpSocket::parseAltimeterLine(MyTcpSocket *thiz, const QString &line)
     if (!(ok1 && ok2 && ok3 && ok4 && ok5))
         qDebug() << "one or more altitude sensor error";
     //        return std::nullopt;
+}
+
+void MyTcpSocket::ret_transponder(void *parent, const char *data, uint32_t length) //const QByteArray &array)
+{
+    auto *local = static_cast<MyTcpSocket *>(parent);
+
+    static bool bussy = false;
+    static char buffer[30];
+    static int pos = 0;
+
+    if(bussy == false)
+    {
+        bussy = true;
+
+        for(uint32_t i=0; i < length;i++)
+        {
+            if(data[i] == '*')
+            {
+                local->transponder_ping = true;
+                QString datalog = QDateTime::currentDateTime().toString()+": "+"Ping received...";
+                local->logdata(local, QString(TRANSPONDERLOG), datalog);
+            }
+
+            //        if(data[i] < 0x1F || pos >= (int)sizeof(buffer))
+            if(data[i] == 0x03 || pos >= (int)sizeof(buffer))
+            {
+                if(pos >= 3)
+                {
+                    // Log all commands... This might be slow... will look at a timed write...
+                    buffer[pos + 1] = '\0';
+                    const QString datalog =
+                        QDateTime::currentDateTime().toString(Qt::ISODate)
+                        + ": "
+                        + QString::fromLocal8Bit(buffer);
+
+                    local->logdata(local, QString(TRANSPONDERLOG), datalog);
+
+                    switch (buffer[0])
+                    {
+                        case 's':
+                        {
+                            local->transponder_command_s = buffer[2];
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'r':
+                        {
+                            local->transponder_command_r = buffer[2];
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'i':
+                        {
+                            local->transponder_command_i = buffer[2];
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'c':
+                        {
+                            strncpy(local->transponder_command_c,buffer,10);
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'a':
+                        {
+                            strncpy(local->transponder_command_a,buffer,10);
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'z':
+                        {
+                            strncpy(local->transponder_command_z,buffer,20);
+                            local->transponder_valid = true;
+                            break;
+                        }
+                        case 'p':
+                        {
+                            local->transponder_command_p = buffer[2];
+                            local->transponder_valid = true;
+                            break;
+                        }
+                    }
+                }
+                pos = 0;
+            }
+            else{
+                if(data[i] != 0x02)  //>= 0x1F)
+                {
+                    buffer[pos++]=data[i];
+                    buffer[pos]=0;
+                }
+                else{
+                    pos = 0;
+                }
+            }
+            QCoreApplication::processEvents();
+        }
+        bussy = false;
+    }
 }
 
 // ============================================================================

@@ -1,41 +1,31 @@
-<?xml version="1.0"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" package="org.qtproject.example" android:installLocation="auto" android:versionCode="1" android:versionName="1.0">
-
+<?xml version='1.0'?>
+<manifest android:installLocation="auto" android:versionCode="1" android:versionName="1.0" package="org.qtproject.example" xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="31"/>
-
     <!-- Features (add as needed) -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.any" android:required="false"/>
-
     <!-- Permissions (trimmed to those that make sense on API 31) -->
     <uses-permission android:name="android.permission.INTERNET"/>
-
     <!-- Storage: WRITE_EXTERNAL_STORAGE is ignored on targetSdk 31; keep READ if you use SAF -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-
     <!-- Network/location/bluetooth set required on Android 12+ -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-
     <uses-permission android:name="android.permission.BLUETOOTH"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ACCESS"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-<!--    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>  -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
+    <!--    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>  -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
-
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
-
     <!-- Special permissions (require user/system UI): -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions"/>
-
-
     <!-- REMOVE invalid/unsupported ones:
          - WRITE_INTERNAL_STORAGE (doesn't exist)
          - WRITE_EXTERNAL_STORAGE (ignored on targetSdk 31)
@@ -43,16 +33,13 @@
          - android.hardware.usb.action.USB_DEVICE_ATTACHED (this is an intent action, not a permission)
          - WRITE_USER_DICTIONARY (rarely needed; remove unless you really use it)
     -->
-
     <supports-screens android:anyDensity="true" android:largeScreens="true" android:normalScreens="true" android:smallScreens="true"/>
-
-    <application android:name="org.qtproject.qt.android.bindings.QtApplication" android:hardwareAccelerated="true" android:label="lowenergyscanner" android:allowBackup="true" android:fullBackupOnly="false" android:icon="@drawable/icon">
-
-        <activity android:name="org.qtproject.qt.android.bindings.QtActivity" android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density" android:label="lowenergyscanner" android:launchMode="singleTop" android:exported="true" android:screenOrientation="landscape" android:theme="@style/splashScreenTheme">
+    <!--%%INSERT_FEATURES-->
+    <application android:allowBackup="true" android:fullBackupOnly="false" android:hardwareAccelerated="true" android:icon="@drawable/icon" android:label="lowenergyscanner" android:name="org.qtproject.qt.android.bindings.QtApplication" android:theme="@style/splashScreenTheme">
+        <activity android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density" android:exported="true" android:label="lowenergyscanner" android:launchMode="singleTop" android:name="org.qtproject.qt.android.bindings.QtActivity" android:screenOrientation="unspecified" android:theme="@style/splashScreenTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-
                 <!-- USB attach/permission actions belong in intent-filters, not uses-permission -->
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
                 <action android:name="android.hardware.usb.action.INTENT_ACTION_USB_PERMISSION"/>
@@ -108,15 +95,12 @@
             <meta-data android:name="android.app.splash_screen_drawable_portrait" android:resource="@drawable/splashscreen_port"/>
             <meta-data android:name="android.app.splash_screen_drawable_landscape" android:resource="@drawable/splashscreen_land"/>
         </activity>
-
         <!-- If this receiver listens for broadcasts from other apps/system, exported=true is fine -->
-        <receiver android:name=".broadcastReceiver" android:exported="true">
+        <receiver android:exported="true" android:name=".broadcastReceiver">
             <intent-filter>
                 <action android:name="INTENT_ACTION_GRANT_USB"/>
             </intent-filter>
         </receiver>
     </application>
-
     <!-- %%INSERT_PERMISSIONS -->
-    <!-- %%INSERT_FEATURES -->
 </manifest>

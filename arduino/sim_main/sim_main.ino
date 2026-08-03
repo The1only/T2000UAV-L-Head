@@ -36,10 +36,10 @@
 #define SENSOR_ALTIMETER 4
 #define SENSOR_AIRSPEED 5
 #define SENSOR_ANGLE 6
+#define NOONE 0
 
-#define SENSOR_V SENSOR_AIRSPEED  // set this manually or with build flags
-#define EXTRA_SENSOR_V SENSOR_ANGLE
-
+#define SENSOR_V SENSOR_TRANSPONDER  // set this manually or with build flags
+#undef EXTRA_SENSOR_V SENSOR_ANGLE
 
 #if SENSOR_V == SENSOR_RADAR
 #define SENSOR "RADAR"  //              ///< Sensor identifier reported in SSDP USN

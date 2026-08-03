@@ -15,6 +15,50 @@
 #include "mainwindow.h"
 #include "myNativeWrapperFunctions.h"
 
+#ifdef Q_OS_ANDROID
+// Enable Android keep-awake helper (no-op on other platforms)
+ #define USE_KeepAwakeHelper
+ #include "lockhelper.h"
+#endif
+
+
+#ifdef Q_OS_ANDROID
+
+enum class AndroidOrientation {
+    Unspecified     = -1,
+    Landscape       = 0,
+    Portrait        = 1,
+    Sensor          = 4,
+    SensorLandscape = 6,
+    SensorPortrait  = 7,
+    ReverseLandscape = 8,
+    ReversePortrait  = 9,
+    FullSensor      = 10,
+    Locked          = 14
+};
+
+void setAndroidOrientation(AndroidOrientation orientation)
+{
+    QNativeInterface::QAndroidApplication::runOnAndroidMainThread(
+        [orientation]() {
+            QJniObject activity =
+                QNativeInterface::QAndroidApplication::context();
+
+            if (!activity.isValid()) {
+                qWarning() << "Cannot set orientation: invalid Android activity";
+                return QVariant();
+            }
+
+            activity.callMethod<void>(
+                "setRequestedOrientation",
+                "(I)V",
+                static_cast<jint>(orientation));
+
+            return QVariant();
+        });
+}
+
+#endif
 
 void qtMessageHandler(QtMsgType type,
                       const QMessageLogContext &context,
@@ -40,16 +84,32 @@ int main(int argc, char *argv[])
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
         Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
-    //Qt::ScreenOrientation ScreenMode;
     QApplication app(argc, argv);
 
+#ifdef Q_OS_ANDROID
+#ifdef LANDSCAPE
+    setAndroidOrientation(AndroidOrientation::Landscape);
+#else
+    setAndroidOrientation(AndroidOrientation::Portrait);
+#endif
+#endif
     MainWindow d;
 
 #if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
-    d.showMaximized();
+ #ifdef Q_OS_ANDROID
+    KeepAwakeHelper::EnableKeepAwakeHelper();
+    QTimer::singleShot(300, &d, [&d]() {
+        d.showMaximized();
+        d.updateGeometry();
+        d.update();
+    });
+ #else
+   d.showMaximized();
+ #endif
 #else
     d.show();
 #endif
+
     app.exec();
 
     return 0;

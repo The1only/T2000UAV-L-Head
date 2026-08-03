@@ -3,7 +3,20 @@
 DEFINES += OPENAI_API_KEY=\\\"$$system(echo $$OPENAI_API_KEY)\\\"
 
 TEMPLATE = app
-TARGET = lowenergyscanner
+
+
+message("SCREEN_TYPE = $$ORIENTATION")
+
+equals(ORIENTATION, PORTRATE) {
+    message("Building for PORTRATE")
+    TARGET = lowenergyscanner
+    DEFINES += PORTRATE
+}
+equals(ORIENTATION, LANDSCAPE) {
+    message("Building for LANDSCAPE")
+    TARGET = lowenergyscanner
+    DEFINES += LANDSCAPE
+}
 
 # ---- common Qt modules ----
 QT += quick widgets charts quickwidgets sensors positioning multimediawidgets svgwidgets xml gui
@@ -40,6 +53,7 @@ RESOURCES += \
 FORMS += \
     mainwindow_port_new.ui \
     mainwindow_port_small.ui \
+    mainwindow_port_pc.ui \
     mainwindow_port_vertical.ui \
     remoteselector.ui \
     mainwindow_phone.ui \

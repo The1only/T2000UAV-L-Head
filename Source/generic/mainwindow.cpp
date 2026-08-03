@@ -89,6 +89,7 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
 
     ui->setupUi(this);
+    ui->stackedWidget->setCurrentIndex(currentIndex);
 
 
 // The splash screen does not make sense on a PC... but it works if you need it...
@@ -99,12 +100,6 @@ MainWindow::MainWindow(QWidget *parent)
     splash->autoFillBackground();
 //    splash->showMessage("Initializing Flight IMU...", Qt::AlignTop | Qt::AlignCenter, Qt::black);
     splash->show();
-#endif
-
-
-#if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-//    helper = new KeepAwakeHelper();
-//    helper->EnableKeepAwakeHelper();
 #endif
 
     // --------------------------------
@@ -136,16 +131,6 @@ MainWindow::MainWindow(QWidget *parent)
             set_default_planes();
         }
     }
-    {
-        // Log all commands... This might be slow... will look at a timed write...
-        QFile *l_file = new QFile(QString(LOG_DIR)+QString(TRANSPONDERLOG));
-        if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
-        {
-            QString data = QDateTime::currentDateTime().toString()+": New Log: \n";
-            l_file->write(data.toLocal8Bit());
-            l_file->close();
-        }
-    }
 
     ui->textEdit->insertPlainText(blob1);
     ui->textEdit_2->insertPlainText(blob2);
@@ -155,6 +140,7 @@ MainWindow::MainWindow(QWidget *parent)
    // ui->quickWidget->setSource(QUrl("qrc:/places_map.qml"));
    // ui->quickWidget->rootObject()->setProperty("zoomLevel", 35); // 18);
 
+    ui->plainTextEdit->document()->setMaximumBlockCount(50);
     ui->lcdNumber->display(QString::number(this->current[0]*1000+this->current[1]*100+this->current[2]*10+this->current[3]).rightJustified(4, '0'));
     ui->lcdNumber_2->display(QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]).rightJustified(4, '0'));
     ui->plainTextEdit->appendPlainText("Glasscockpit 200-UAV v1.02a");
@@ -166,7 +152,7 @@ MainWindow::MainWindow(QWidget *parent)
     // The serial ports shuld be a parameter to the constructor...
     // The m_calibrate shuld be set in a different manner...
     // Remember that the MyTcpSocket spawns a slower process only...
-    this->mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->getVal, &this->setIMU);
+    this->mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->setIMU);
 
     QThread::msleep(1000);
 
@@ -239,7 +225,9 @@ MainWindow::MainWindow(QWidget *parent)
         qDebug() << "Log file error...  ";
     }
     // try to actually initialize camera & mic
+#ifndef TRANSPONDER_ONLY
     init();
+#endif
 
     _widgetAI  = ui->widgetai;
     _widgetAI->reinit();
@@ -339,6 +327,20 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
 
+#ifdef TRANSPONDER_ONLY
+    ui->select_down->hide();
+    ui->select_up->hide();
+    ui->select_down->setDisabled(true);
+    ui->select_up->setDisabled(true);
+#endif
+
+    // Start the clock....
+    qDebug() << "  Transponder update...  ";
+    m_Transponder = new QTimer(this);
+    m_Transponder->setSingleShot(false);
+    connect(m_Transponder, SIGNAL(timeout()), this, SLOT(getTransponderVal()));
+    m_Transponder->start(250);
+
     // Start the clock....
     qDebug() << "  doClock  ";
     m_Clock = new QTimer(this);
@@ -350,7 +352,6 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
- //   helper->DisableKeepAwakeHelper();
     qDebug() << "Exiting...";
     qApp->closeAllWindows();
 }
@@ -407,10 +408,15 @@ void MainWindow::showImage()
         return;
     }
 
+    // Write where the log files will be...
+    QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(logDir);
+    ui->plainTextEdit->appendPlainText(logDir);
+
     m_graphScen->clear();
     QGraphicsPixmapItem *item = m_graphScen->addPixmap(pix2);
     item->setTransformationMode(Qt::SmoothTransformation);
-    item->setOpacity(0.5);  //
+    item->setOpacity(1.0);  //
     m_graphScen->setSceneRect(item->boundingRect());
     view->setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     view->fitInView(item, Qt::IgnoreAspectRatio);
@@ -435,6 +441,8 @@ void MainWindow::setButtonIcon(QString iconPath, QPushButton* button)
 // Call back funtion from the sensor handler...
 void MainWindow::setIMU(void *parent, bool use_imu)
 {
+#ifndef TRANSPONDER_ONLY
+
     static bool allready_run = false;
     MainWindow* local = (MainWindow*)parent;
     QList<QSensor*> mySensorList;
@@ -648,15 +656,11 @@ void MainWindow::setIMU(void *parent, bool use_imu)
         local->m_IMU->start(20);
         local->m_dt = QDateTime::currentMSecsSinceEpoch();
 
-    #if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-        //local->helper = new KeepAwakeHelper();
-    //    local->helper->EnableKeepAwakeHelper();
-    #endif
-
     //    local->m_msgBox->hide();
     //    QCoreApplication::processEvents();
         local->m_msgBox->show();
     }
+#endif
     QCoreApplication::processEvents();
 }
 
@@ -724,13 +728,6 @@ void MainWindow::updateCameras()
 
 void MainWindow::setCamera(const QCameraDevice &cameraDevice)
 {
-#if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-//    if(helper){
-//        delete helper;
-//        helper = nullptr;
-//    }
-#endif
-
     m_cameraDevic = new QCameraDevice(cameraDevice);
     m_camera.reset(new QCamera(*m_cameraDevic));
     m_captureSession.setCamera(m_camera.data());
@@ -784,11 +781,6 @@ void MainWindow::hideCamera()
     ui->viewfinder->hide();
     m_captureSession.disconnect();
     m_camera.reset();
-
-#if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-//    helper->EnableKeepAwakeHelper();
-#endif
-
 
 }
 
@@ -1032,6 +1024,8 @@ void MainWindow::AccelerometerRead()
 
         if(tmp != 0)
             avg = approxRollingAverage<20>(avg, tmp);
+        else
+            m_calibrate = 1;
 
         qDebug() << "tmP / AVG: " << tmp << " -> " << avg;;
 
@@ -1555,7 +1549,16 @@ void MainWindow::onReadingChanged()
         head_dir+=x_head;
         head_dir/=headfilterlength;
         */
+#ifdef USE_ANGLE
+        if(mysocket->Anglestat == true){
+            m_head = this->mysocket->AngleSensor;
+        }
+        else{
+            m_head = 0;
+        }
+#else
         m_head = x_head; //head_dir;
+#endif
         //-----------------
 
         // Store data in local registers...
@@ -2171,339 +2174,230 @@ void MainWindow::setalt(int alt_mode)
     qDebug() << "Set ALT: " << alt_mode;
 }
 
-void MainWindow::getVal(void *parent, const char *data, uint32_t length) //const QByteArray &array)
+void MainWindow::getTransponderVal() //const QByteArray &array)
 {
-    static bool bussy = false;
-    static char buffer[30];
-    static int pos = 0;
-    MainWindow* saved_this= (MainWindow*) parent;
-    Ui::SCREEN* local_ui  = saved_this->ui;
-
-    if(bussy == false){
-        bussy = true;
-
-    //    qDebug() << array;
-
-        for(uint32_t i=0; i < length;i++)
-        {
-            if(data[i] == '*')
-            {
-                QMetaObject::invokeMethod(saved_this, [saved_this]() {
-
-                    QString x = saved_this->ui->pushButton_10->styleSheet();
-                    x.replace(QString("1 #900"), QString("1 #090"));
-                    saved_this->ui->pushButton_10->setStyleSheet(x);
-                    saved_this->ui->pushButton_10->update();
-                    saved_this->timerPing->start(10000);
-                }, Qt::QueuedConnection);
-
-                // Log all commands... This might be slow... will look at a timed write...
-                QFile *l_file = new QFile(QString(LOG_DIR)+ QString(TRANSPONDERLOG));
-                if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
-                {
-                    QString data = QDateTime::currentDateTime().toString()+": "+"Ping received...\n";
-                    l_file->write(data.toLocal8Bit());
-                    l_file->close();
-                }
+    if(this->mysocket->transponder_valid)
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            QString x = this->ui->pushButton_14->styleSheet();
+            if (x.contains("#900")) {
+                x.replace("1 #900", "1 #090");
+                this->ui->pushButton_14->setStyleSheet(x);
+                this->ui->pushButton_14->update();
             }
-
-    //        if(data[i] < 0x1F || pos >= (int)sizeof(buffer))
-            if(data[i] == 0x03 || pos >= (int)sizeof(buffer))
-            {
-                if(pos >= 3)
-                {
-                    // Log all commands... This might be slow... will look at a timed write...
-                    QFile *l_file = new QFile(QString(LOG_DIR)+ QString(TRANSPONDERLOG));
-                    if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
-                    {
-                        buffer[pos+1]=0;
-                        QString datalog = QDateTime::currentDateTime().toString()+": "+buffer+"\n";
-                        l_file->write(datalog.toLocal8Bit());
-                        l_file->close();
-                    }
-
-                    // Make the flash activity...
-                    {
-                        QMetaObject::invokeMethod(saved_this, [saved_this]() {
-                            QString x = saved_this->ui->pushButton_14->styleSheet();
-                            if (x.contains("#900")) {
-                                x.replace("1 #900", "1 #090");
-                                saved_this->ui->pushButton_14->setStyleSheet(x);
-                                saved_this->ui->pushButton_14->update();
-                            }
-                            saved_this->timerActive->start(5000);
-                        }, Qt::QueuedConnection);
-                    }
-
-                    switch (buffer[0])
-                    {
-                        case 's':
-                        {
-                            auto setButtonActive = [](QPushButton *button, bool active)
-                            {
-                                QString style = button->styleSheet();
-                                qDebug() << style;
-
-                                if (active) {
-                                    // Only change if it is currently inactive
-                                    if (style.contains("1 #888")) {
-                                        style.replace("1 #888", "1 #2A0");
-                                        button->setStyleSheet(style);
-                                        button->update();
-                                        QThread::msleep(100);
-                                    }else{
-
-                                    }
-                                } else {
-                                    // Only change if it is currently active
-                                    if (style.contains("1 #2A0")) {
-                                        style.replace("1 #2A0", "1 #888");
-                                        button->setStyleSheet(style);
-                                        button->update();
-                                        QThread::msleep(100);
-                                    }
-                                }
-                            };
-
-                            int newMode = saved_this->mode;
-
-                            switch (buffer[2])
-                            {
-                            case 't':   newMode = 1;    break;
-                            case 'a':   newMode = 2;    break;
-                            case 'c':   newMode = 3;    break;
-                            default:                    break;
-                            }
-
-                            // Only do anything if the mode actually changed
-                            if (newMode != saved_this->mode){
-                                setButtonActive(local_ui->pushButton_stby, newMode == 1);
-                                setButtonActive(local_ui->pushButton_norm, newMode == 2);
-                                setButtonActive(local_ui->pushButton_alt,  newMode == 3);
-                                saved_this->mode = newMode;
-                            }
-                            break;
-
-
-
-
-
-
-
-
-
-                            /*
-                            QString x;
-                            x = local_ui->pushButton_off->styleSheet();
-                            x.replace(QString("1 #2A0"), QString("1 #888"));
-
-                            switch(saved_this->mode){
-                            case 0:
-                                local_ui->pushButton_off->setStyleSheet(x);
-                                saved_this->ui->pushButton_off->update();
-                                break;
-                            case 1:
-                                local_ui->pushButton_stby->setStyleSheet(x);
-                                saved_this->ui->pushButton_stby->update();
-                                break;
-                            case 2:
-                                local_ui->pushButton_norm->setStyleSheet(x);
-                                saved_this->ui->pushButton_norm->update();
-                                break;
-                            case 3:
-                                local_ui->pushButton_alt->setStyleSheet(x);
-                                saved_this->ui->pushButton_alt->update();
-                                break;
-
-                            }
-
-                            x.replace(QString("1 #888"), QString("1 #2A0"));
-
-                            switch(buffer[2])
-                            {
-                                case 'o':
-                                    local_ui->pushButton_off->setStyleSheet(x);
-                                    saved_this->ui->pushButton_off->update();
-                                    saved_this->mode = 0;
-                                    break;
-
-                                case 't':
-                                    local_ui->pushButton_stby->setStyleSheet(x);
-                                    saved_this->ui->pushButton_stby->update();
-                                    saved_this->mode = 1;
-                                    break;
-
-                                case 'a':
-                                    local_ui->pushButton_norm->setStyleSheet(x);
-                                    saved_this->ui->pushButton_norm->update();
-                                    saved_this->mode = 2;
-                                    break;
-
-                                case 'c':
-                                    local_ui->pushButton_alt->setStyleSheet(x);
-                                    saved_this->ui->pushButton_alt->update();
-                                    saved_this->mode = 3;
-                                    break;
-
-                                default:
-                                    break;
-
-                            }
-                            break;
-                            */
-                        }
-                        case 'r':
-                        {
-                            bool state=true;
-                            if (buffer[2] == 'N') state = false;
-
-                            QString x = tr("Annunciator %1").arg(state);
-                            break;
-                        }
-                        case 'i':
-                        {
-                            bool state;
-                            if (buffer[2] == '0') state = false;
-                            else state = true;
-
-                            QString x = local_ui->pushButton_Ident->styleSheet();
-
-                            if ( state == false)
-                            {
-                                x.replace(QString("1 #900"), QString("1 #888"));
-                            }else{
-                                x.replace(QString("1 #888"), QString("1 #900"));
-                            }
-                            local_ui->pushButton_Ident->setStyleSheet(x);
-                            local_ui->pushButton_Ident->update();
-                            break;
-                        }
-
-                        case 'c':
-                        {
-                            int number;
-                            char numout[5];
-                            sscanf(buffer,"c=%d",&number);
-                            snprintf(numout,5,"%.4d",number);
-
-                            saved_this->current[3]=numout[3]-0x30;
-                            saved_this->current[2]=numout[2]-0x30;
-                            saved_this->current[1]=numout[1]-0x30;
-                            saved_this->current[0]=numout[0]-0x30;
-
-                            local_ui->lcdNumber->display(QString::number( saved_this->current[0]*1000+
-                                                                         saved_this->current[1]*100+
-                                                                         saved_this->current[2]*10+
-                                                                         saved_this->current[3]).rightJustified(4, '0'));
-                            break;
-                        }
-                        case 'a':
-                        {
-                            float number;
-                            char numout[20];
-                            sscanf(buffer,"a=%f",&number);
-                            QString altType="Alt.Ft.";
-
-                            if(saved_this->alt_mode == 1)
-                            {
-                                for (unsigned long key=0; key < strlen(buffer); key++)
-                                {
-                                    if(buffer[key]=='M')
-                                    {
-                                        number*=3.2808399;
-                                        break;
-                                    }
-                                }
-                                saved_this->m_tansALT = round(number/100.0)*100;
-                            }
-                            else{
-                                for (unsigned long key=0; key < strlen(buffer); key++)
-                                {
-                                    if(buffer[key]=='F')
-                                    {
-                                        number/=3.2808399;
-                                        break;
-                                    }
-                                }
-                                saved_this->m_tansALT = round(number);
-                                altType="Alt.M.";
-                            }
-                            snprintf(numout,20,"%.4d",(int)saved_this->m_tansALT);
-                            local_ui->lcdNumber_3->display(numout);
-                            local_ui->label_2->setText(altType);
-    //                        local_ui->baro_alt->setText(numout);
-                            saved_this->alt_receiced = true;
-                            break;
-                        }
-
-                        case 'z':
-                        {
-                            qDebug() << "T: %s\r\n" << &buffer[2];
-                            local_ui->plainTextEdit->appendPlainText(&buffer[2]);
-                            break;
-                        }
-
-                        case 'p':
-                        {
-                            qDebug() << "P: %s\r\n" << &buffer[2];
-
-                            bool state=true;
-                            if (buffer[2] == '1') state = false;
-
-                            QString x = tr("Hardware test status: %1").arg(state);
-                            local_ui->plainTextEdit->appendPlainText(x);
-
-                            // ...
-                            if(state == true)
-                            {
-                                x = local_ui->pushButton_10->styleSheet();
-                                x.replace(QString("1 #900"), QString("1 #090"));
-                                local_ui->pushButton_10->setStyleSheet(x);
-                                local_ui->pushButton_10->update();
-                                saved_this->timerPing->stop();
-                                saved_this->timerPing->start(5000); // Turn off in 5 sec...
-                            }
-                            else
-                            {
-                                x = local_ui->pushButton_10->styleSheet();
-                                x.replace(QString("1 #090"), QString("1 #900"));
-                                local_ui->pushButton_10->setStyleSheet(x);
-                                local_ui->pushButton_10->update();
-                            }
-                            break;
-                        }
-                    }
-                }
-                pos = 0;
-
-            }
-            else{
-                if(data[i] != 0x02)  //>= 0x1F)
-                {
-                    buffer[pos++]=data[i];
-                    buffer[pos]=0;
-                }
-                else{
-                    pos = 0;
-                }
-            }
-        }
-        bussy = false;
+            this->timerActive->start(5000);
+        }, Qt::QueuedConnection);
+        this->mysocket->transponder_valid = false;
     }
+
+    if(this->mysocket->transponder_ping)
+    {
+        QMetaObject::invokeMethod(this, [this]() {
+            QString x = this->ui->pushButton_10->styleSheet();
+            x.replace(QString("1 #900"), QString("1 #090"));
+            this->ui->pushButton_10->setStyleSheet(x);
+            this->ui->pushButton_10->update();
+            this->timerPing->start(10000);
+        }, Qt::QueuedConnection);
+        this->mysocket->transponder_ping = false;
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_s != '-')
+    {
+        auto setButtonActive = [](QPushButton *button, bool active)
+        {
+            QString style = button->styleSheet();
+            //                                qDebug() << style;
+
+            if (active) {
+                // Only change if it is currently inactive
+                if (style.contains("1 #888")) {
+                    style.replace("1 #888", "1 #2A0");
+                    button->setStyleSheet(style);
+                    button->update();
+                    QThread::msleep(100);
+                }else{
+
+                }
+            } else {
+                // Only change if it is currently active
+                if (style.contains("1 #2A0")) {
+                    style.replace("1 #2A0", "1 #888");
+                    button->setStyleSheet(style);
+                    button->update();
+                    QThread::msleep(100);
+                }
+            }
+        };
+
+        int newMode = this->mode;
+
+        switch (this->mysocket->transponder_command_s )
+        {
+        case 't':   newMode = 1;    break;
+        case 'a':   newMode = 2;    break;
+        case 'c':   newMode = 3;    break;
+        default:                    break;
+        }
+
+        // Only do anything if the mode actually changed
+        if (newMode != this->mode){
+            setButtonActive(this->ui->pushButton_stby, newMode == 1);
+            setButtonActive(this->ui->pushButton_norm, newMode == 2);
+            setButtonActive(this->ui->pushButton_alt,  newMode == 3);
+            this->mode = newMode;
+        }
+        this->mysocket->transponder_command_s = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_r != '-')
+    {
+        bool state=true;
+        if (this->mysocket->transponder_command_r  == 'N') state = false;
+        QString x = tr("Annunciator %1").arg(state);
+        this->mysocket->transponder_command_r = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_i != '-')
+    {
+        bool state;
+        if (this->mysocket->transponder_command_i  == '0') state = false;
+        else state = true;
+
+        QString x = this->ui->pushButton_Ident->styleSheet();
+
+        if ( state == false)
+        {
+            x.replace(QString("1 #900"), QString("1 #888"));
+        }else{
+            x.replace(QString("1 #888"), QString("1 #900"));
+        }
+        this->ui->pushButton_Ident->setStyleSheet(x);
+        this->ui->pushButton_Ident->update();
+
+        this->mysocket->transponder_command_i = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_c[0] != '-')
+    {
+        int number;
+        char numout[5];
+        sscanf(this->mysocket->transponder_command_c,"c=%d",&number);
+        snprintf(numout,5,"%.4d",number);
+
+        this->current[3]=numout[3]-0x30;
+        this->current[2]=numout[2]-0x30;
+        this->current[1]=numout[1]-0x30;
+        this->current[0]=numout[0]-0x30;
+
+        this->ui->lcdNumber->display(QString::number( this->current[0]*1000+
+                                                     this->current[1]*100+
+                                                     this->current[2]*10+
+                                                     this->current[3]).rightJustified(4, '0'));
+        this->ui->lcdNumber->update();
+        this->mysocket->transponder_command_c[0] = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_a[0] != '-')
+    {
+        float number;
+        char numout[20];
+        if(this->mysocket->transponder_command_a[2] == '?'){
+            this->mysocket->transponder_command_a[2] = '1';
+            this->mysocket->transponder_command_a[3] = 'M';
+            this->mysocket->transponder_command_a[4] = 0;
+        }
+        sscanf(this->mysocket->transponder_command_a,"a=%f",&number);
+        QString altType="Alt.Ft.";
+
+        if(this->alt_mode == 1)
+        {
+            for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
+            {
+                if(this->mysocket->transponder_command_a[key]=='M')
+                {
+                    number*=3.2808399;
+                    break;
+                }
+            }
+            this->m_tansALT = round(number/100.0)*100;
+        }
+        else{
+            for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
+            {
+                if(this->mysocket->transponder_command_a[key]=='F')
+                {
+                    number/=3.2808399;
+                    break;
+                }
+            }
+            this->m_tansALT = round(number);
+            altType="Alt.M.";
+        }
+        snprintf(numout,20,"%.4d",(int)this->m_tansALT);
+        this->ui->lcdNumber_3->display(numout);
+        this->ui->lcdNumber_3->update();
+        this->ui->label_2->setText(altType);
+        this->ui->label_2->update();
+
+//                        local_ui->baro_alt->setText(numout);
+
+        // We assume that altitude never will is zero, this might not hold,
+        // but there has been some issues with the altitude encoder so we do this any how...
+        if((int)this->m_tansALT > 0)
+            this->alt_receiced = true;
+
+        this->mysocket->transponder_command_a[0] = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_z[0] != '-')
+    {
+        qDebug() << "T: %s\r\n" << &this->mysocket->transponder_command_z[2];
+        this->ui->plainTextEdit->appendPlainText(&this->mysocket->transponder_command_z[2]);
+        this->ui->plainTextEdit->update();
+        this->mysocket->transponder_command_z[0] = '-';
+    }
+
+    /// ----------------------------------------------------
+    if(this->mysocket->transponder_command_p != '-')
+    {
+        qDebug() << "P: %c\r\n" << &this->mysocket->transponder_command_p;
+
+        bool state=true;
+        if (this->mysocket->transponder_command_p == '1') state = false;
+
+        QString x = tr("Hardware test status: %1").arg(state);
+        this->ui->plainTextEdit->appendPlainText(x);
+        this->ui->plainTextEdit->update();
+
+        // ...
+        if(state == true)
+        {
+            x = this->ui->pushButton_10->styleSheet();
+            x.replace(QString("1 #900"), QString("1 #090"));
+            this->ui->pushButton_10->setStyleSheet(x);
+            this->ui->pushButton_10->update();
+            this->timerPing->stop();
+            this->timerPing->start(5000); // Turn off in 5 sec...
+        }
+        else
+        {
+            x = this->ui->pushButton_10->styleSheet();
+            x.replace(QString("1 #090"), QString("1 #900"));
+            this->ui->pushButton_10->setStyleSheet(x);
+            this->ui->pushButton_10->update();
+        }
+
+        this->mysocket->transponder_command_p = '-';
+    }
+//    QCoreApplication::processEvents();
 }
-
-void MainWindow::setVal()
-{
-    qDebug() << "Set val";
-    /*
-    QByteArray array = device.m_message.toLocal8Bit();
-    char* buffer = array.data();
-    std::fprintf(stderr,"M: %s \n\r",buffer);  //m_message);
-
-    ui->plainTextEdit->appendPlainText(device.m_message);
-    */
-}
-
 
 void MainWindow::accepted(void)
 {
@@ -2606,131 +2500,87 @@ void MainWindow::on_pushButton_off_clicked(){
 //-------------------------------------------------------------
 //-------------------------------------------------------------
 // Index 0 Transponder
-void MainWindow::on_select_camera_from_transponder_clicked()
+void MainWindow::on_select_up_clicked()
 {
-    setCamera(QMediaDevices::defaultVideoInput());
-    currentIndex = P_CAMERA;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_gyro_page_clicked()
-{
-    currentIndex = P_IMU;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
+    changePage(+1);
 }
 
-// Index 1 Gyro eng
-void MainWindow::on_select_transponder_page_clicked()
+void MainWindow::on_select_down_clicked()
+
 {
-    if( mysocket->Transponderstat == true)
-    {
+    changePage(-1);
+}
+
+void MainWindow::changePage(int direction)
+{
+    // Leave camera page
+    if (currentIndex == P_CAMERA)
+        hideCamera();
+
+    currentIndex += direction;
+
+    // Wrap around
+    if (currentIndex > P_CAMERA)
         currentIndex = P_TRANSPONDER;
-        ui->stackedWidget->setCurrentIndex(currentIndex);
-    }
-    else{
-        setCamera(QMediaDevices::defaultVideoInput());
+    else if (currentIndex < P_TRANSPONDER)
         currentIndex = P_CAMERA;
-        ui->stackedWidget->setCurrentIndex(currentIndex);
-    }
-}
-void MainWindow::on_select_dumy_page2_clicked()
-{
-    currentIndex = P_FLIGT_INSTRUMENT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
 
-// Index 2 gyro nice
-void MainWindow::on_select_transponder_page_2_clicked()
-{
-    currentIndex = P_IMU;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_dumy_page2_2_clicked()
-{
-    currentIndex = P_GLASS_COCPIT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
+    // Skip Transponder page if unavailable
+    if (currentIndex == P_TRANSPONDER && !mysocket->Transponderstat)
+        currentIndex += direction;
 
-// Index 3 eadi
-void MainWindow::on_select_transponder_page_3_clicked()
-{
-    currentIndex = P_FLIGT_INSTRUMENT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_from_4_to_5_clicked()
-{
-    currentIndex = P_RADAR;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-
-// Index 4 Radar
-void MainWindow::on_select_transponder_page_4_clicked()
-{
-    currentIndex = P_GLASS_COCPIT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_from_5_to_6_clicked()
-{
-    currentIndex = P_RADIO_LIST;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-
-// Index 5 Radio list
-void MainWindow::on_select_gyro_page2_clicked()
-{
-    currentIndex = P_RADAR;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_transponder_page2_clicked(){
-    currentIndex = P_AUTOPILOT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-
-// Index 6 Map
-void MainWindow::on_select_gyro_page2_2_clicked()
-{
-    currentIndex = P_RADIO_LIST;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_transponder_page2_2_clicked()
-{
-    currentIndex = P_CONFIG;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-
-// Indx 7 Config
-void MainWindow::on_select_page2_map_clicked(){
-    currentIndex = P_AUTOPILOT;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-}
-void MainWindow::on_select_transponder_page_camera_clicked(){
-    setCamera(QMediaDevices::defaultVideoInput());
-    currentIndex = P_CAMERA;
-    ui->stackedWidget->setCurrentIndex(currentIndex);
-
-}
-
-//Index 8 camera
-void MainWindow::on_select_transponder_page2_3_clicked()
-{
-    hideCamera();
-    if( mysocket->Transponderstat == true)
-    {
+    // Wrap again if skipping crossed the end
+    if (currentIndex > P_CAMERA)
         currentIndex = P_TRANSPONDER;
-        ui->stackedWidget->setCurrentIndex(currentIndex);
-    }
-    else{
-        currentIndex = P_IMU;
-        ui->stackedWidget->setCurrentIndex(currentIndex);
-    }
-}
+    else if (currentIndex < P_TRANSPONDER)
+        currentIndex = P_CAMERA;
 
-void MainWindow::on_select_gyro_page2_3_clicked()
-{
-    hideCamera();
-    currentIndex = P_CONFIG;
+    // Enter camera page
+    if (currentIndex == P_CAMERA)
+        setCamera(QMediaDevices::defaultVideoInput());
+
     ui->stackedWidget->setCurrentIndex(currentIndex);
 }
 
+
+/*
+void MainWindow::on_select_up_clicked(){
+    if(currentIndex == P_CAMERA)
+        currentIndex = P_TRANSPONDER;
+    else
+        currentIndex++;
+
+    if(currentIndex == P_TRANSPONDER)
+        hideCamera();
+
+    if( currentIndex == P_TRANSPONDER && mysocket->Transponderstat == false){
+        currentIndex = P_IMU;
+    }
+
+    if(currentIndex == P_CAMERA)
+        setCamera(QMediaDevices::defaultVideoInput());
+
+    ui->stackedWidget->setCurrentIndex(currentIndex);
+}
+void MainWindow::on_select_down_clicked(){
+    if(currentIndex == P_TRANSPONDER)
+        currentIndex = P_CAMERA;
+    else
+        currentIndex--;
+
+    if(currentIndex == P_CONFIG)
+        hideCamera();
+
+    if( currentIndex == P_TRANSPONDER && mysocket->Transponderstat == false){
+        currentIndex = P_CAMERA;
+    }
+
+    if(currentIndex == P_CAMERA)
+        setCamera(QMediaDevices::defaultVideoInput());
+
+    ui->stackedWidget->setCurrentIndex(currentIndex);
+}
+*/
 //-------------------------------------------------------------
 //-------------------------------------------------------------
 
@@ -2930,7 +2780,7 @@ void MainWindow::on_pushButton_15_clicked()
 void MainWindow::on_reconnect_now_clicked()
 {
     delete(mysocket);
-    mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->getVal, &this->setIMU);
+    mysocket = new MyTcpSocket(this, ui->plainTextEdit, &this->setIMU);
 }
 
 void MainWindow::on_pushButton_20_clicked()
@@ -3025,16 +2875,16 @@ void MainWindow::on_fly_home_clicked()
 
 //        ui->quickWidget->raise();
         ui->fly_home->raise();
-        ui->select_transponder_page2_2->raise();
-        ui->select_gyro_page2_2->raise();
+ //       ui->select_transponder_page2_2->raise();
+ //       ui->select_gyro_page2_2->raise();
     }else{
         mysocket->mqtt->sendMessage("xplane/engage", "Deactivate");
         ui->Autopilot_status->setText("Deactivated");
 
  //       ui->graphicsView_3->raise();
         ui->fly_home->raise();
-        ui->select_transponder_page2_2->raise();
-        ui->select_gyro_page2_2->raise();
+//        ui->select_transponder_page2_2->raise();
+//        ui->select_gyro_page2_2->raise();
     }
     pingpong= !pingpong;
 }
@@ -3126,7 +2976,8 @@ void MainWindow::on_use_built_inn_barometer_clicked()
 
             if( mysocket->Transponderstat == true)
             {
-                mysocket->readyWrite((char*)"\x02" "d=s" "\x03");
+                mysocket->readyWrite((char*)"\x02" "d=g" "\x03");
+//                mysocket->readyWrite((char*)"\x02" "d=s" "\x03");
             }
 
         }

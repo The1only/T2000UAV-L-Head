@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_title">USB Serial For Android</string>
-    <string name="app_name">USB Serial to UDP server v1.0 Copy(C)Right The1Only</string>
+    <string name="app_title">SportsPlane multi sensor display Android</string>
+    <string name="app_name">SportsPlane sensor server v1.0 Copy(C)Right The1Only</string>
     <string name="devices">USB Devices</string>
 </resources>

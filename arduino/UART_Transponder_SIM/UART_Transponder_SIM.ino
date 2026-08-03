@@ -48,7 +48,7 @@ int input_buffer_head=0;
 int input_buffer_tail=0;
 
 int Power = 11;
-int PIN  = 12;
+int PIN  = 9; //48;
 #define NUMPIXELS 1
 
 bool connected = false;
@@ -87,7 +87,7 @@ void write_to_transponder(char r)
   static int ping_time = 0;
 
   ping_time++;
-  if (r == '*' || ping_time>100)
+  if (r == '*' || ping_time>500)
   {
     ping_time=0;
     ping = true;

@@ -43,7 +43,7 @@
      <rect>
       <x>0</x>
       <y>0</y>
-      <width>791</width>
+      <width>741</width>
       <height>321</height>
      </rect>
     </property>
@@ -535,7 +535,7 @@ selection-color: rgb(253, 255, 135);
          <string notr="true">color: rgb(135,135,135);</string>
         </property>
         <property name="text">
-         <string>v2.01a-2025</string>
+         <string>v2.02a-2026</string>
         </property>
        </widget>
        <zorder>lcdNumber_3</zorder>
@@ -1006,50 +1006,6 @@ padding: 5px;
        <bool>false</bool>
       </property>
      </widget>
-     <widget class="QPushButton" name="select_gyro_page">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_camera_from_transponder">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QLabel" name="label_17">
       <property name="geometry">
        <rect>
@@ -1097,8 +1053,6 @@ padding: 5px;
      <zorder>pushButton_10</zorder>
      <zorder>tabWidget</zorder>
      <zorder>pushButton_norm</zorder>
-     <zorder>select_gyro_page</zorder>
-     <zorder>select_camera_from_transponder</zorder>
      <zorder>label_17</zorder>
     </widget>
     <widget class="QWidget" name="page">
@@ -1146,7 +1100,7 @@ padding: 5px;
       </property>
       <property name="dateTime">
        <datetime>
-        <hour>20</hour>
+        <hour>15</hour>
         <minute>0</minute>
         <second>0</second>
         <year>2023</year>
@@ -1358,50 +1312,6 @@ padding: 5px;
       </property>
       <property name="alignment">
        <set>Qt::AlignmentFlag::AlignCenter</set>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_dumy_page2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_transponder_page">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
       </property>
      </widget>
      <widget class="QPushButton" name="timer_start">
@@ -1797,8 +1707,6 @@ QPushButton:pressed {
      <zorder>speed</zorder>
      <zorder>roll</zorder>
      <zorder>pitch</zorder>
-     <zorder>select_dumy_page2</zorder>
-     <zorder>select_transponder_page</zorder>
      <zorder>timer_start</zorder>
      <zorder>label_7</zorder>
      <zorder>label_8</zorder>
@@ -1815,66 +1723,6 @@ QPushButton:pressed {
      <zorder>plainTextEdit_2</zorder>
     </widget>
     <widget class="QWidget" name="page_6">
-     <widget class="QPushButton" name="select_transponder_page_2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="minimumSize">
-       <size>
-        <width>61</width>
-        <height>0</height>
-       </size>
-      </property>
-      <property name="maximumSize">
-       <size>
-        <width>61</width>
-        <height>16777215</height>
-       </size>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="autoFillBackground">
-       <bool>false</bool>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;
-</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_dumy_page2_2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="WidgetAI" name="widgetai" native="true">
       <property name="geometry">
        <rect>
@@ -2249,8 +2097,6 @@ QPushButton:pressed {
        <string>Set QNH</string>
       </property>
      </widget>
-     <zorder>select_transponder_page_2</zorder>
-     <zorder>select_dumy_page2_2</zorder>
      <zorder>widgetai</zorder>
      <zorder>widgetASI</zorder>
      <zorder>radioButton</zorder>
@@ -2268,50 +2114,6 @@ QPushButton:pressed {
      <zorder>widgetHI</zorder>
     </widget>
     <widget class="QWidget" name="page_7">
-     <widget class="QPushButton" name="select_transponder_page_3">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_from_4_to_5">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="WidgetEADI" name="widgetEADI" native="true">
       <property name="geometry">
        <rect>
@@ -2402,50 +2204,6 @@ QPushButton:pressed {
      </widget>
     </widget>
     <widget class="QWidget" name="page_9">
-     <widget class="QPushButton" name="select_from_5_to_6">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_transponder_page_4">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QGraphicsView" name="graphicsView_2">
       <property name="geometry">
        <rect>
@@ -2509,57 +2267,8 @@ QPushButton:pressed {
        <string>0</string>
       </property>
      </widget>
-     <zorder>graphicsView_2</zorder>
-     <zorder>select_from_5_to_6</zorder>
-     <zorder>select_transponder_page_4</zorder>
-     <zorder>label_26</zorder>
-     <zorder>label_29</zorder>
     </widget>
     <widget class="QWidget" name="page_3">
-     <widget class="QPushButton" name="select_transponder_page2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_gyro_page2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QTextEdit" name="textEdit">
       <property name="geometry">
        <rect>
@@ -2708,50 +2417,6 @@ QPushButton:pressed {
      </widget>
     </widget>
     <widget class="QWidget" name="page_4">
-     <widget class="QPushButton" name="select_transponder_page2_2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_gyro_page2_2">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QQuickWidget" name="quickWidget">
       <property name="geometry">
        <rect>
@@ -2801,7 +2466,7 @@ QPushButton:pressed {
         <x>10</x>
         <y>10</y>
         <width>721</width>
-        <height>281</height>
+        <height>301</height>
        </rect>
       </property>
       <property name="styleSheet">
@@ -3011,8 +2676,6 @@ QPushButton:pressed {
      </widget>
      <zorder>quickWidget</zorder>
      <zorder>graphicsView_3</zorder>
-     <zorder>select_gyro_page2_2</zorder>
-     <zorder>select_transponder_page2_2</zorder>
      <zorder>fly_home</zorder>
      <zorder>label_UTC</zorder>
      <zorder>label_Speed</zorder>
@@ -3024,50 +2687,6 @@ QPushButton:pressed {
      <zorder>Autopilot_status</zorder>
     </widget>
     <widget class="QWidget" name="page_8">
-     <widget class="QPushButton" name="select_transponder_page_camera">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_page2_map">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QPushButton" name="use_hw">
       <property name="geometry">
        <rect>
@@ -3568,50 +3187,6 @@ QPushButton:pressed {
      </widget>
     </widget>
     <widget class="QWidget" name="page_5">
-     <widget class="QPushButton" name="select_transponder_page2_3">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>0</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-     <widget class="QPushButton" name="select_gyro_page2_3">
-      <property name="geometry">
-       <rect>
-        <x>730</x>
-        <y>160</y>
-        <width>61</width>
-        <height>161</height>
-       </rect>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>19</pointsize>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
      <widget class="QVideoWidget" name="viewfinder" native="true">
       <property name="geometry">
        <rect>
@@ -3780,14 +3355,51 @@ QPushButton:pressed {
        <string>Stop</string>
       </property>
      </widget>
-     <zorder>viewfinder</zorder>
-     <zorder>select_transponder_page2_3</zorder>
-     <zorder>select_gyro_page2_3</zorder>
-     <zorder>pushButton_20</zorder>
-     <zorder>pushButton_21</zorder>
-     <zorder>pushButton_22</zorder>
-     <zorder>pushButton_23</zorder>
     </widget>
+   </widget>
+   <widget class="QPushButton" name="select_down">
+    <property name="geometry">
+     <rect>
+      <x>740</x>
+      <y>180</y>
+      <width>61</width>
+      <height>161</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>19</pointsize>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="select_up">
+    <property name="geometry">
+     <rect>
+      <x>740</x>
+      <y>10</y>
+      <width>61</width>
+      <height>161</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>19</pointsize>
+      <bold>true</bold>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
    </widget>
   </widget>
   <widget class="QStatusBar" name="statusbar">

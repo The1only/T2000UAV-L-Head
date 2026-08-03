@@ -66,35 +66,6 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class SCREEN; }
 QT_END_NAMESPACE
 
-// Enable Android keep-awake helper (no-op on other platforms)
-#define USE_KeepAwakeHelper
-
-// --------------------------------------------------------------------------
-// Platform-specific log/image directories
-// --------------------------------------------------------------------------
-#ifdef Q_OS_IOS
-// iOS: user-visible Documents directory
-#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#elif defined(Q_OS_MAC)
-// macOS: also use Documents
-#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#else
-// Android: explicit external storage paths
-#define IMAGES_DIR "/storage/emulated/0/DCIM/Camera"
-#define LOG_DIR    "/storage/emulated/0/Documents"
-#endif
-
-// --------------------------------------------------------------------------
-// File names (relative to LOG_DIR)
-// --------------------------------------------------------------------------
-#define RADIO          "/setup_radio_b.txt"
-#define AIRPLANE       "/setup_ln_b.txt"
-#define CONFIG         "/config_b.txt"
-#define FLIGHTLOG      "/flightlog.txt"
-#define TRANSPONDERLOG "/log.txt"
-
 // Define the Qiskit interface (used for performance test)
 void Qiskit(void);
 
@@ -231,6 +202,9 @@ public:
      */
     void showImage();
 
+    // Set current page...
+    void changePage(int direction);
+
     /// Optional iOS splash screen shown at startup.
     QSplashScreen *splash = nullptr;
 
@@ -249,7 +223,7 @@ public:
     Matrix3x3 rotationMatrix;
 
     /// Screen orientation (portrait/landscape).
-    Qt::ScreenOrientation ScreenMode;
+   // Qt::ScreenOrientation ScreenMode;
 
     /// Transponder code being set (digits 0..7).
     int next[4]   = {7, 0, 0, 0};
@@ -327,7 +301,11 @@ public:
     #define P_CAMERA            8
 
     /// Current index of stacked widget.
-    int currentIndex = 0;
+#ifdef TRANSPONDER_ONLY
+    int currentIndex = P_TRANSPONDER;
+#else
+    int currentIndex = P_FLIGT_INSTRUMENT;
+#endif
 
     /**
      * @brief C callback from MyTcpSocket when IMU presence is known.
@@ -403,7 +381,7 @@ private:
     QTimer *timertakePicture= nullptr;  ///< Periodic picture capture.
     QTimer *m_IMU           = nullptr;  ///< EKF update timer.
     QTimer *m_Display       = nullptr;  ///< Instrument redraw timer.
-
+    QTimer *m_Transponder   = nullptr;  ///< Transponder redraw ...
     // ------------------------------------------------------------------
     // EKF and attitude filter
     // ------------------------------------------------------------------
@@ -478,11 +456,6 @@ private:
     /// Calibration message box during IMU calibration.
     NoButtonMessageBox *m_msgBoxCalibrating = nullptr;
 
-#if defined(Q_OS_ANDROID) && defined(USE_KeepAwakeHelper)
-    /// Prevent Android device from sleeping during operation.
-    KeepAwakeHelper *helper = new KeepAwakeHelper();
-#endif
-
     /// Signal emitted on quit/OK (used with dialogs).
     void accepted();
 
@@ -495,7 +468,15 @@ private slots:
     // ------------------------------------------------------------------
     // Simple UI slots / transponder keypad / exit etc.
     // ------------------------------------------------------------------
-    void setVal();
+    /**
+     * @brief C-style RX callback from MyTcpSocket for transponder data.
+     *
+     * @param parent Pointer back to MainWindow instance.
+     * @param data   Raw ASCII payload.
+     * @param lenght Length of payload in bytes.
+     */
+    void getTransponderVal();
+
 
     // Keypad buttons (set "next" code digit)
     void on_pushButton_clicked();
@@ -525,8 +506,6 @@ private slots:
     void on_reconnect_now_clicked();
     void on_pushButton_20_clicked();
     void on_reset_heading_clicked();
-    void on_select_transponder_page_3_clicked();
-    void on_select_from_4_to_5_clicked();
 
     // Status / timers
     void doCheck();
@@ -549,30 +528,17 @@ private slots:
     void onTempReadingChanged();
 
     // Page navigation (stackedWidget)
-    void on_select_gyro_page_clicked();
-    void on_select_gyro_page2_clicked();
-    void on_select_camera_from_transponder_clicked();
-    void on_select_dumy_page2_clicked();
-    void on_select_transponder_page_clicked();
-    void on_select_transponder_page2_clicked();
+    void on_select_up_clicked();
+    void on_select_down_clicked();
+
     void on_imu_reset_clicked();
     void on_timer_start_clicked();
     void on_textEdit_1_textChanged();
     void on_textEdit_2_textChanged();
     void on_pushButton_15_clicked();
-    void on_select_transponder_page2_2_clicked();
-    void on_select_gyro_page2_2_clicked();
-    void on_select_transponder_page2_3_clicked();
-    void on_select_gyro_page2_3_clicked();
     void on_pushButton_21_clicked();
     void on_pushButton_22_clicked();
-    void on_select_dumy_page2_2_clicked();
-    void on_select_transponder_page_2_clicked();
-    void on_select_page2_map_clicked();
-    void on_select_transponder_page_camera_clicked();
     void on_use_gps_in_attitude_clicked();
-    void on_select_transponder_page_4_clicked();
-    void on_select_from_5_to_6_clicked();
     void on_use_built_inn_barometer_clicked();
 
     void on_pushButton_23_clicked();
@@ -593,15 +559,6 @@ private slots:
 
     // EKF main loop
     void EKF();
-
-    /**
-     * @brief C-style RX callback from MyTcpSocket for transponder data.
-     *
-     * @param parent Pointer back to MainWindow instance.
-     * @param data   Raw ASCII payload.
-     * @param lenght Length of payload in bytes.
-     */
-    static void getVal(void *parent, const char *data, uint32_t lenght);
 
 public:
     /// Which screen (monitor) index we are using.

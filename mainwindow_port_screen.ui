@@ -38,17 +38,32 @@
    <bool>false</bool>
   </property>
   <widget class="QWidget" name="centralwidget">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="styleSheet">
     <string notr="true"/>
    </property>
-   <layout class="QGridLayout" name="gridLayout">
+   <layout class="QGridLayout">
+    <property name="sizeConstraint">
+     <enum>QLayout::SizeConstraint::SetNoConstraint</enum>
+    </property>
+    <property name="leftMargin">
+     <number>1</number>
+    </property>
+    <property name="topMargin">
+     <number>1</number>
+    </property>
     <item row="0" column="0">
      <widget class="QStackedWidget" name="stackedWidget">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
       <property name="styleSheet">
        <string notr="true"/>
       </property>
       <property name="currentIndex">
-       <number>2</number>
+       <number>5</number>
       </property>
       <widget class="QWidget" name="page_2">
        <widget class="QPushButton" name="pushButton">
@@ -985,7 +1000,7 @@ padding: 5px;
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -1007,7 +1022,7 @@ padding: 5px;
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -1143,7 +1158,7 @@ padding: 5px;
         </property>
         <property name="dateTime">
          <datetime>
-          <hour>20</hour>
+          <hour>13</hour>
           <minute>0</minute>
           <second>0</second>
           <year>2023</year>
@@ -1362,7 +1377,7 @@ padding: 5px;
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -1384,7 +1399,7 @@ padding: 5px;
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2196,7 +2211,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2218,7 +2233,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2326,7 +2341,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2348,7 +2363,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2460,7 +2475,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2482,7 +2497,7 @@ color: rgb(255, 255, 255);
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2577,7 +2592,7 @@ background-color: rgb(0, 13, 17);</string>
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2599,7 +2614,7 @@ background-color: rgb(0, 13, 17);</string>
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2762,6 +2777,60 @@ QPushButton:pressed {
          <string>Reset List</string>
         </property>
        </widget>
+       <widget class="QWidget" name="widget" native="true">
+        <property name="geometry">
+         <rect>
+          <x>1430</x>
+          <y>-10</y>
+          <width>71</width>
+          <height>861</height>
+         </rect>
+        </property>
+        <widget class="QPushButton" name="select_up">
+         <property name="geometry">
+          <rect>
+           <x>0</x>
+           <y>20</y>
+           <width>91</width>
+           <height>381</height>
+          </rect>
+         </property>
+         <property name="font">
+          <font>
+           <pointsize>19</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">border-image: url(:/images/button2.png) 0 0 0 0 stretch stretch;</string>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+        </widget>
+        <widget class="QPushButton" name="select_down">
+         <property name="geometry">
+          <rect>
+           <x>0</x>
+           <y>420</y>
+           <width>71</width>
+           <height>431</height>
+          </rect>
+         </property>
+         <property name="font">
+          <font>
+           <pointsize>19</pointsize>
+           <bold>true</bold>
+          </font>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">border-image: url(:/images/button1.png) 0 0 0 0 stretch stretch;</string>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+        </widget>
+       </widget>
       </widget>
       <widget class="QWidget" name="page_4">
        <widget class="QPushButton" name="select_transponder_page2_2">
@@ -2769,7 +2838,7 @@ QPushButton:pressed {
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -2791,7 +2860,7 @@ QPushButton:pressed {
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -3115,7 +3184,7 @@ background-color: rgb(0, 8, 12);</string>
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -3137,7 +3206,7 @@ background-color: rgb(0, 8, 12);</string>
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -3659,7 +3728,7 @@ QPushButton:pressed {
          <rect>
           <x>1380</x>
           <y>10</y>
-          <width>101</width>
+          <width>31</width>
           <height>411</height>
          </rect>
         </property>
@@ -3681,7 +3750,7 @@ QPushButton:pressed {
          <rect>
           <x>1380</x>
           <y>460</y>
-          <width>101</width>
+          <width>41</width>
           <height>411</height>
          </rect>
         </property>

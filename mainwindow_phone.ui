@@ -32,7 +32,7 @@
    <string>MainWindow</string>
   </property>
   <property name="styleSheet">
-   <string notr="true">background-color: rgb(161, 161, 161);</string>
+   <string notr="true">background-color: rgb(0,0,0);</string>
   </property>
   <property name="unifiedTitleAndToolBarOnMac">
    <bool>false</bool>
@@ -48,10 +48,14 @@
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/one.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/one.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -67,10 +71,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/two.png);
-background-image: url(:/two.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/two.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -86,10 +94,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/tree.png);
-background-image: url(:/two.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/tree.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -105,10 +117,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/fore.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/fore.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -124,10 +140,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/five.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/five.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -143,10 +163,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/six.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/six.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -162,10 +186,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/seven.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/seven.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -181,10 +209,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/eight.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/eight.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -200,10 +232,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/nine.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/nine.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -384,10 +420,14 @@ padding: 5px;
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/enter.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/enter.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -403,10 +443,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/zero.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/zero.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -422,10 +466,14 @@ background-color: rgb(49, 49, 49);
      </rect>
     </property>
     <property name="styleSheet">
-     <string notr="true">image: url(:/del.png);
-background-image: url(:/one.png);
-background-color: rgb(49, 49, 49);
-</string>
+     <string notr="true">
+QPushButton {
+    image: url(:/images/del.png); 
+    background-color: rgb(49, 49, 49);
+}
+QPushButton:pressed {
+    background-color: rgb(224, 0, 0);
+}</string>
     </property>
     <property name="text">
      <string/>
@@ -434,10 +482,10 @@ background-color: rgb(49, 49, 49);
    <widget class="QPushButton" name="pushButton_19">
     <property name="geometry">
      <rect>
-      <x>360</x>
-      <y>650</y>
-      <width>81</width>
-      <height>81</height>
+      <x>370</x>
+      <y>670</y>
+      <width>71</width>
+      <height>61</height>
      </rect>
     </property>
     <property name="font">
@@ -448,16 +496,17 @@ background-color: rgb(49, 49, 49);
     </property>
     <property name="styleSheet">
      <string notr="true">QPushButton {
-background-color: rgb(255, 166, 20);
+color: #333;
 border: 2px solid #555;
 border-radius: 38px;
 border-style: outset;
 background: qradialgradient(
-cx: 0.5, cy: -0.4, fx: 0.3, fy: -0.4,
-radius: 1.35, stop: 0 #fff, stop: 1 #557
+cx: 0.3, cy: -0.4, fx: 0.1, fy: -0.1,
+radius: 1.2, stop: 0 #fff, stop: 1 #922
 );
 padding: 5px;
 }
+
 
 </string>
     </property>
@@ -488,7 +537,7 @@ border-radius: 38px;
 border-style: outset;
 background: qradialgradient(
 cx: 0.5, cy: -0.4, fx: 0.3, fy: -0.3,
-radius: 1.35, stop: 0 #fff, stop: 1 #561
+radius: 1.35, stop: 0 #fff, stop: 1 #227
 );
 padding: 5px;
 }
@@ -514,6 +563,9 @@ padding: 5px;
       <family>Times New Roman</family>
       <pointsize>22</pointsize>
      </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(0, 0, 0);</string>
     </property>
     <property name="currentIndex">
      <number>3</number>

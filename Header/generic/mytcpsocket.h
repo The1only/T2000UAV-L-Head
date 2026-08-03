@@ -14,6 +14,10 @@
 #include <QList>
 #include <QHostAddress>
 #include <QNetworkInterface>
+#include <QStandardPaths>
+#include <QFile>
+#include <QDir>
+
 
 #include "ekfNavINS.h"
 #include "rotation_matrix.h"
@@ -22,6 +26,10 @@
 #include "tcpclient.h"
 #include "ssdp.h"
 #include "bleuart.h"
+
+#define  TRANSPONDER_ONLY
+#undef   USE_MQTT // Simulator...
+#undef   USE_ANGLE
 
 // Look for an external IMU over Bluetooth
 #ifndef Q_OS_IOS
@@ -42,30 +50,87 @@
 #include <QSerialPortInfo>
 #endif
 
+// --------------------------------------------------------------------------
+// Platform-specific log/image directories
+// --------------------------------------------------------------------------
+#ifdef Q_OS_IOS
+// iOS: user-visible Documents directory
+#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#elif defined(Q_OS_MAC)
+// macOS: also use Documents
+#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#else
+// Android: explicit external storage paths
+#define IMAGES_DIR "/storage/emulated/0/DCIM/Camera"
+#define LOG_DIR    "/storage/emulated/0/Documents"
+#endif
+
+// --------------------------------------------------------------------------
+// File names (relative to LOG_DIR)
+// --------------------------------------------------------------------------
+#define RADIO          "/setup_radio_b.txt"
+#define AIRPLANE       "/setup_ln_b.txt"
+#define CONFIG         "/config_b.txt"
+#define FLIGHTLOG      "/flightlog.txt"
+#define TRANSPONDERLOG "/log.txt"
+
+
 // -----------------------------------------------------------------------------
 // UI selection / simulation flags
 // -----------------------------------------------------------------------------
-#ifdef Q_OS_ANDROID
+#ifdef TRANSPONDER_ONLY
+ #ifdef Q_OS_ANDROID
+  #ifdef LANDSCAPE
+   #define SCREEN MainWindow_port_small
+   #include "ui_mainwindow_port_small.h"
+  #else
+   #define SCREEN MainWindow_port_vertical
+   #include "ui_mainwindow_port_vertical.h"
+  #endif
+ #endif
+
+#define simGPS false
+
+#elif defined(Q_OS_ANDROID)
+#define SMALL_SCREEN
+
 // Android: main window layout
-//#define SCREEN MainWindow_port_new
-//#include "ui_mainwindow_port_new.h"
+ #ifndef SMALL_SCREEN
+  #define SCREEN MainWindow_port_new
+  #include "ui_mainwindow_port_new.h"
+ #else
+  #define SCREEN MainWindow_port_small
+  #include "ui_mainwindow_port_small.h"
+ #endif
 
-#define SCREEN MainWindow_port_small
-#include "ui_mainwindow_port_small.h"
-
-#include "lockhelper.h"
 #define simGPS false
 
 #elif defined(Q_OS_IOS)
 // If IOS for apple...
-#define SCREEN MainWindow_port_iPhone
-#include "ui_mainwindow_port_iPhone.h"
+#define SCREEN MainWindow_port_vertical
+#include "ui_mainwindow_port_vertical.h"
+
+//#define SCREEN MainWindow_port_iPhone
+//#include "ui_mainwindow_port_iPhone.h"
 #define simGPS false
 
 #elif defined(Q_OS_MAC)
 // If MAC or PC screen...
-#include "ui_mainwindow_port_screen.h"
-#define SCREEN MainWindow_port_screen
+//#define SCREEN MainWindow_port_pc
+//#include "ui_mainwindow_port_pc.h"
+
+//#define SCREEN MainWindow_port_vertical
+//#include "ui_mainwindow_port_vertical.h"
+
+#define SCREEN MainWindow_port_new
+#include "ui_mainwindow_port_new.h"
+
+
+//#include "ui_mainwindow_port_screen.h"
+//#define SCREEN MainWindow_port_screen
+
 #define simGPS false
 
 #else
@@ -197,7 +262,6 @@ public:
      */
     explicit MyTcpSocket(QObject *parent = nullptr,
                          QPlainTextEdit *s = nullptr,
-                         void (*retx)(void *, const char *, uint32_t) = nullptr,
                          void (*rety)(void *, bool use_imu) = nullptr);
     ~MyTcpSocket();
 
@@ -221,13 +285,15 @@ public:
     void (*ret_imu)(void *, bool use_imu) = nullptr;
 
     /// Callback invoked when serial data arrives from transponder.
-    void (*ret_transponder)(void *, const char *data, uint32_t size) = nullptr;
-
-    /// Callback invoked when serial data arrives from transponder.
     static void ret_airspeed(void *, const char *data, uint32_t size);
 
     /// Callback invoked when serial data arrives from transponder.
     static void ret_altimeter(void *, const char *data, uint32_t size);
+
+    /// Callback invoked when serial data arrives from transponder.
+    static void ret_angle(void *, const char *data, uint32_t size);
+
+    void logdata(void *, QString file, QString datalog);
 
     /**
      * @brief Try to connect and initialize the transponder.
@@ -263,6 +329,14 @@ public:
      * Radar, with status dialogs along the way.
      */
     void connectedRadar();
+
+
+    /**
+     * @brief Try to connect and initialize Angle sensor (Net or USB).
+     *
+     * Radar, with status dialogs along the way.
+     */
+    void connectedAngle();
 
     /**
      * @brief Try to connect and initialize RADAR (Net or USB).
@@ -364,6 +438,22 @@ public:
     /// Optional text log widget.
     QPlainTextEdit *text = nullptr;
 
+    float AngleSensor = 0.0;
+
+    // Stansponder values...
+    bool transponder_ping      = false;
+    bool transponder_valid     = false;
+
+    char transponder_command_s = '-';
+    char transponder_command_r = '-';
+    char transponder_command_i = '-';
+    char transponder_command_c[10] = {'-'};
+    char transponder_command_a[10] = {'-'};
+    char transponder_command_z[20] = {'-'};
+    char transponder_command_p = '-';
+
+
+
     // ------------------------------------------------------------------
     // Default USB serial numbers / IDs (SIM vs REAL)
     // ------------------------------------------------------------------
@@ -372,7 +462,7 @@ public:
     QString _IMU_copy         = "Imu";         ///< REAL
     QString _AirSpeed_copy    = "Airspeed";
     QString _Altitude_copy    = "Altitude";
-
+    QString _angle_copy       = "Angle";
 
     // ------------------------------------------------------------------
     // Default USB serial numbers / IDs (SIM vs REAL)
@@ -448,9 +538,10 @@ public:
  //   bool Transponderstat = true;  ///< True if transponder is connected and open.
     bool Transponderstat = false;  ///< True if transponder is connected and open.
 //#endif
-    bool Altitudestat = false;   ///< For convenience on macOS (no USB check yet).
-    bool Airspeedstat = false;
-    bool Radarstat    = false;       ///< True if radar device is connected.
+    bool Altitudestat = false;     ///< For convenience on macOS (no USB check yet).
+    bool Airspeedstat = false;     ///< True if Airspeed sensor is connected...
+    bool Radarstat    = false;     ///< True if radar device is connected...
+    bool Anglestat    = false;     ///<  True is Angle sensor detected...
 
     float rPos   = 0.0f;           ///< Raw radar "position" / bearing.
     float rSpeed = 0.0f;           ///< Radar radial speed along beam.
@@ -524,12 +615,16 @@ private:
     // ---------------------------------------------------------------------
 #ifndef Q_OS_IOS
     ComQt *TransponderSerPort = nullptr; ///< Serial port for transponder.
+ #ifndef TRANSPONDER_ONLY
+
     ComQt *RadarSerPort       = nullptr; ///< Serial port for radar.
     ComQt *INSSerPort         = nullptr; ///< Serial port for IMU/INS.
     ComQt *AltimeterPort      = nullptr; ///< Serial port for radar.
     ComQt *AirSpeedPort       = nullptr; ///< Serial port for radar.
- #if defined(USE_BT_IMU)
+    ComQt *AnglePort          = nullptr; ///< Serial port for radar.
+  #if defined(USE_BT_IMU)
     ComBt *bluetootPort       = nullptr; ///< Bluetooth port for IMU.
+  #endif
  #endif
 #endif
     QString m_imu_address = "";
@@ -551,6 +646,16 @@ signals:
     void sendMessage(const QString &message);
 
 public slots:
+    /**
+     * @brief C-style RX callback from MyTcpSocket for transponder data.
+     *
+     * @param parent Pointer back to MainWindow instance.
+     * @param data   Raw ASCII payload.
+     * @param lenght Length of payload in bytes.
+     */
+    static void ret_transponder(void *parent, const char *data, uint32_t lenght);
+
+
     /**
      * @brief Periodic transponder polling / configuration state machine.
      *
