@@ -1002,9 +1002,9 @@ QPushButton:pressed {
          <string>v1.02a-2026</string>
         </property>
        </widget>
-       <widget class="QPushButton" name="pushButton_24">
+       <widget class="QPushButton" name="pushButton_27">
         <property name="enabled">
-         <bool>false</bool>
+         <bool>true</bool>
         </property>
         <property name="geometry">
          <rect>
@@ -1039,7 +1039,7 @@ QPushButton:pressed {
 }</string>
         </property>
         <property name="text">
-         <string>UseExtSens</string>
+         <string>TRA</string>
         </property>
        </widget>
       </widget>
@@ -1113,7 +1113,7 @@ QPushButton:pressed {
       </property>
       <property name="dateTime">
        <datetime>
-        <hour>17</hour>
+        <hour>13</hour>
         <minute>0</minute>
         <second>0</second>
         <year>2023</year>

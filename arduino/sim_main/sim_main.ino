@@ -27,8 +27,8 @@
 #include <WiFi.h>
 #include <Adafruit_BMP280.h>
 #include "esp_task_wdt.h"
-#define SIM true;
-#define USE_WIFI 
+#define SIM false;
+#undef USE_WIFI 
 
 #define SENSOR_RADAR 1
 #define SENSOR_IMU 2
@@ -38,8 +38,8 @@
 #define SENSOR_ANGLE 6
 #define NOONE 0
 
-#define SENSOR_V SENSOR_TRANSPONDER  // set this manually or with build flags
-#undef EXTRA_SENSOR_V SENSOR_ANGLE
+#define SENSOR_V SENSOR_ALTIMETER  // set this manually or with build flags
+#undef EXTRA_SENSOR_V NOONE
 
 #if SENSOR_V == SENSOR_RADAR
 #define SENSOR "RADAR"  //              ///< Sensor identifier reported in SSDP USN

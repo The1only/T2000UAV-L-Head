@@ -32,12 +32,14 @@
 #include <QThread>
 #include <QHostAddress>
 #include <QNetworkInterface>
+#include <QRegularExpression>
 
 #include <QStringList>
 
 #ifdef Q_OS_ANDROID
 #include <QtCore/private/qandroidextras_p.h>
 #include <QJniObject>
+#include "sharedstorage.h"
 #endif
 
 #ifdef Q_OS_IOS
@@ -109,13 +111,29 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
 
     // Now new app start...
     QString datalog = QDateTime::currentDateTime().toString()+": New Log:";
-    this->logdata(this, QString(TRANSPONDERLOG), datalog);
 
+#ifdef Q_OS_ANDROID
+    const bool success = SharedStorage::appendTextFile("LowEnergyScanner","log.txt",datalog);
+    if (!success) {
+        qWarning() << "Could not write transponder log";
+    }
+    else{
+        qWarning() << QString(FLIGHTLOG) << " at " << "LowEnergyScanner";
+    }
+
+#else
+    this->logdata(this, QString(TRANSPONDERLOG), datalog);
+#endif
 
     // ---------------------------------------------------------------------
     // Serial / Bluetooth COM objects
     // ---------------------------------------------------------------------
 #ifndef Q_OS_IOS
+
+    // Altimeter serial port
+    AltimeterPort = new ComQt(this);
+    AltimeterPort->setParent(this);
+    AltimeterPort->setRxCallback(ret_altimeter);         // callback from WIT C SDK
 
 #ifndef TRANSPONDER_ONLY
     // Radar serial port
@@ -127,11 +145,6 @@ MyTcpSocket::MyTcpSocket(QObject *parent,
     INSSerPort = new ComQt(parent);
     INSSerPort->setParent(this);
     INSSerPort->setRxCallback(WitSerialDataIn);         // callback from WIT C SDK
-
-    // Altimeter serial port
-    AltimeterPort = new ComQt(this);
-    AltimeterPort->setParent(this);
-    AltimeterPort->setRxCallback(ret_altimeter);         // callback from WIT C SDK
 
     // Airspeed serial port
     AirSpeedPort = new ComQt(this);
@@ -221,12 +234,12 @@ MyTcpSocket::~MyTcpSocket()
 {
 #ifndef Q_OS_IOS
     TransponderSerPort->close();
+    AltimeterPort->close();
 
  #ifndef TRANSPONDER_ONLY
     RadarSerPort->close();
     INSSerPort->close();
     AirSpeedPort->close();
-    AltimeterPort->close();
  #endif
 #endif
     qDebug() << "Stopped socket...";
@@ -234,6 +247,10 @@ MyTcpSocket::~MyTcpSocket()
 
 void MyTcpSocket::logdata(void* saved, QString logfile, QString datalog)
 {
+    Q_UNUSED(saved)
+    Q_UNUSED(logfile)
+    Q_UNUSED(datalog)
+
 /*
     QString logDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(logDir);
@@ -438,6 +455,7 @@ QMap<QString, QString> MyTcpSocket::serialToPortMap(bool useSystemLocation)
 
 QMap<QString, QString> MyTcpSocket::serialToPortMap(bool useSystemLocation)
 {
+    Q_UNUSED(useSystemLocation)
     QMap<QString, QString> result;
     useconds_t us = (useconds_t)500 * 1000u;
     int i = 0;
@@ -540,6 +558,9 @@ void MyTcpSocket::doStart()
 #ifdef TRANSPONDER_ONLY
     if (!Transponderstat){
         connected();
+    }
+    if (!Altitudestat){
+        connectedAltitudeSerial();     // try to find & initialize Altimeter
     }
 #else
     switch(state){
@@ -1002,7 +1023,6 @@ void MyTcpSocket::connectedAltitude()
 
 void MyTcpSocket::connectedAltitudeSerial()
 {
-#ifndef TRANSPONDER_ONLY
  #ifndef Q_OS_IOS
     QString port_name = findPort(_Altitude_copy);
     qDebug() << "Looking for Altimeter Port:" << port_name;
@@ -1010,7 +1030,6 @@ void MyTcpSocket::connectedAltitudeSerial()
         AltimeterPort->open(port_name, QSerialPort::Baud115200)) {
         Altitudestat = true;
     }
- #endif
 #endif
 }
 
@@ -1139,7 +1158,7 @@ void MyTcpSocket::parseIMU(void *parent,uint32_t uiReg, uint16_t sRegAll[])
         local->m_longitude = nmea_ddmm_to_deg(join32( sReg[LonL],sReg[LonH]));
         local->m_latitude = nmea_ddmm_to_deg(join32(sReg[LatL],sReg[LatH]));
         //        GPS[2] = (float)sReg[GPSHeight]/10.0; // Get altitude...
-        local->m_altitude = (float)sReg[D0Status]/10.0; // Get altitude...
+      //  local->m_altitude = (float)sReg[D0Status]/10.0; // Get altitude...
 
         local->Temp = (float) sReg[TEMP]/100.0;
         local->VER = sReg[VERSION];
@@ -1199,6 +1218,7 @@ void MyTcpSocket::doRadar(void *parent, const char *data, uint32_t length)
 
         if (fields.length() >= 4) {
             const float azimuthRad = kAzimuthDeg / (180.0f / static_cast<float>(M_PI));
+            Q_UNUSED(azimuthRad)
         //    const float cosAz      = cosf(azimuthRad);
 
             local->rPos++;
@@ -1221,6 +1241,24 @@ void MyTcpSocket::doRadar(void *parent, const char *data, uint32_t length)
  *
  * Called from timerAlt every ~150 ms.
  */
+void MyTcpSocket::TransponderMode(bool mode)
+{
+    static bool last_mode = true;
+
+    if(mode != last_mode){
+        if(mode){
+            readyWrite(const_cast<char *>("\x02" "d=g" "\x03"));
+            qDebug() << "d=g" ;
+        }
+        else{
+            readyWrite(const_cast<char *>("\x02" "d=s" "\x03"));
+            qDebug() << "d=s" ;
+        }
+        last_mode = mode;
+    }
+}
+
+
 void MyTcpSocket::doTransponder()
 {
     static int  state  = 0;
@@ -1257,12 +1295,18 @@ void MyTcpSocket::doTransponder()
     case 8:
         // If transponder has internal barometer and we have a valid reading,
         // push current altitude to transponder to correct known bug.
-        if (TransponderstatWithBarometer && m_pressure_raw > 1.0)
+        if (transponder_serial_mode && m_altitude > 0.1)
         {
             char x[64];
-            snprintf(x, sizeof(x), "\x02" "a=%dM" "\x03",
-                     static_cast<int>(m_preasure_alt * 0.3048));  // feet -> meters
+
+            if(m_altitude > 160 || m_altitude < 140){
+                qDebug() << m_altitude;
+            }
+
+
+            snprintf(x, sizeof(x), "\x02" "a=%dM" "\x03", static_cast<int>(m_altitude));  // feet -> meters
             readyWrite(x);
+           // qDebug() << m_altitude;
         }
         break;
     default:
@@ -1436,6 +1480,7 @@ void MyTcpSocket::parseAirspeedLine(MyTcpSocket *thiz, const QString &line)
 
 // ============================================================================
 // Low-level  helper
+// 17:30:43.855 -> ALTIMETER,997.0312,24.2770,0.0898,135.8314,30031033                                                               17:30:44.052 -> ALTIMETER,997.0316,24.2846,0.0898,135.8314,30031033
 // ============================================================================
 void MyTcpSocket::parseAltimeterLine(MyTcpSocket *thiz, const QString &line)
 {
@@ -1444,6 +1489,7 @@ void MyTcpSocket::parseAltimeterLine(MyTcpSocket *thiz, const QString &line)
 
     // Remove whitespace and line endings
     QString clean = line.trimmed();
+    qDebug() << clean;
 
     // Split CSV
     QStringList parts = clean.split(QRegularExpression("[,\n]"),Qt::SkipEmptyParts);
@@ -1477,8 +1523,11 @@ void MyTcpSocket::parseAltimeterLine(MyTcpSocket *thiz, const QString &line)
 
     float altitude = parts[4].toFloat(&ok4);
     if (ok4 && !std::isnan(altitude)) {
-        thiz->Altimeter_data.altitude    = altitude;
-         thiz->m_altitude = altitude;
+        thiz->Altimeter_data.altitude = altitude;
+        thiz->m_altitude = altitude;
+        if(altitude > 160 || altitude < 140){
+            qDebug() << altitude;
+        }
     }
 
     float angle = parts[5].toFloat(&ok5);
@@ -1527,6 +1576,7 @@ void MyTcpSocket::ret_transponder(void *parent, const char *data, uint32_t lengt
                         + QString::fromLocal8Bit(buffer);
 
                     local->logdata(local, QString(TRANSPONDERLOG), datalog);
+                  //  qDebug() << datalog;
 
                     switch (buffer[0])
                     {
@@ -1534,6 +1584,15 @@ void MyTcpSocket::ret_transponder(void *parent, const char *data, uint32_t lengt
                         {
                             local->transponder_command_s = buffer[2];
                             local->transponder_valid = true;
+                            break;
+                        }
+                        case 'd':
+                        {
+                            if(buffer[2] == 's'){
+                                local->transponder_serial_mode = true;
+                            }else{
+                                local->transponder_serial_mode = false;
+                            }
                             break;
                         }
                         case 'r':

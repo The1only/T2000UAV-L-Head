@@ -55,12 +55,12 @@
 // --------------------------------------------------------------------------
 #ifdef Q_OS_IOS
 // iOS: user-visible Documents directory
-#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/FlightInstrument"
+#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/FlightInstrument"
 #elif defined(Q_OS_MAC)
 // macOS: also use Documents
-#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+#define IMAGES_DIR QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/FlightInstrument"
+#define LOG_DIR    QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/FlightInstrument"
 #else
 // Android: explicit external storage paths
 #define IMAGES_DIR "/storage/emulated/0/DCIM/Camera"
@@ -89,6 +89,9 @@
    #define SCREEN MainWindow_port_vertical
    #include "ui_mainwindow_port_vertical.h"
   #endif
+ #else
+    #define SCREEN MainWindow_port_small
+    #include "ui_mainwindow_port_small.h"
  #endif
 
 #define simGPS false
@@ -368,6 +371,10 @@ public:
      */
     void setbacklit();
 
+    // Set the transponder to Serial mode og Callaham mode...
+    void TransponderMode(bool mode);
+
+
     /**
      * @brief Process an incoming MQTT message from the X-Plane bridge.
      *
@@ -441,8 +448,9 @@ public:
     float AngleSensor = 0.0;
 
     // Stansponder values...
-    bool transponder_ping      = false;
-    bool transponder_valid     = false;
+    bool transponder_ping        = false;
+    bool transponder_valid       = false;
+    bool transponder_serial_mode = false;
 
     char transponder_command_s = '-';
     char transponder_command_r = '-';
@@ -452,6 +460,7 @@ public:
     char transponder_command_z[20] = {'-'};
     char transponder_command_p = '-';
 
+    int Transponder_altitude_mode = 0;
 
 
     // ------------------------------------------------------------------
@@ -615,11 +624,12 @@ private:
     // ---------------------------------------------------------------------
 #ifndef Q_OS_IOS
     ComQt *TransponderSerPort = nullptr; ///< Serial port for transponder.
- #ifndef TRANSPONDER_ONLY
+    ComQt *AltimeterPort      = nullptr; ///< Serial port for radar.
+
+#ifndef TRANSPONDER_ONLY
 
     ComQt *RadarSerPort       = nullptr; ///< Serial port for radar.
     ComQt *INSSerPort         = nullptr; ///< Serial port for IMU/INS.
-    ComQt *AltimeterPort      = nullptr; ///< Serial port for radar.
     ComQt *AirSpeedPort       = nullptr; ///< Serial port for radar.
     ComQt *AnglePort          = nullptr; ///< Serial port for radar.
   #if defined(USE_BT_IMU)

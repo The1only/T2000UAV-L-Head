@@ -48,6 +48,7 @@ android {
         ./Source/driver/geoid_helper.cpp \
         ./EKF_IMU_GPS/ekf_nav_ins/src/ekfNavINS.cpp \
         ./Source/driver/bleuart.cpp \
+        ./Source/driver/sharedstorage.cpp \
 
 #       ./Source/generic/multicastlistner.cpp \
 
@@ -67,6 +68,8 @@ android {
         ./Header/driver/serialport.h \
         ./Header/driver/geoid_helper.h \
        ./Header/driver/bleuart.h \
+       ./Header/driver/sharedstorage.h \
+
 
 #       ./Header/generic/QuickWidget.h \
 #       ./Header/generic/multicastlistner.h \
@@ -165,4 +168,7 @@ android {
         android/WitSDK/proguard-rules.pro \
         android/imu/proguard-rules.pro
 }
+
+DISTFILES += \
+    $$PWD/../android/src/main/java/com/hoho/android/usbserial/util/SharedStorage.java
 

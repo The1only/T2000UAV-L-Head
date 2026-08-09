@@ -377,7 +377,7 @@ void altimeter_loop()
   }
 
   if(serverClients[0] == 0)
-    Serial.print(s);
+    Serial.println(s);
 
   delay(200);
 }

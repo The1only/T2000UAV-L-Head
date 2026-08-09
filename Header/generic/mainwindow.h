@@ -502,6 +502,8 @@ private slots:
     void on_pushButton_12_clicked();
     void on_pushButton_13_clicked();
 
+    void on_pushButton_27_clicked();
+
     // Misc controls
     void on_reconnect_now_clicked();
     void on_pushButton_20_clicked();

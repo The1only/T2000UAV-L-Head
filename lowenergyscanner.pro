@@ -79,6 +79,7 @@ android {
 }
 
 DISTFILES += \
+    android/src/main/java/com/hoho/android/usbserial/util/SharedStorage.java \
     platform/android.pri \
     platform/apple.pri \
     docs/doxygen.pri
@@ -88,4 +89,3 @@ DISTFILES += \
 # make doc
 # make doc-pdf
 # latexmk -pdf refman.tex
-

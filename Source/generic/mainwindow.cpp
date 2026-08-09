@@ -45,9 +45,12 @@
 #include "mainwindow.h"
 //#include "mytcpsocket.h"
 #include "gpx_parse.h"
-
 #include "wit_c_sdk.h"
 #include "geoid_helper.h"
+
+#ifdef Q_OS_ANDROID
+#include "sharedstorage.h"
+#endif
 
 using namespace std;
 using namespace std::chrono;
@@ -79,13 +82,29 @@ MainWindow::MainWindow(QWidget *parent)
     this->setFixedSize(this->size());
 */
 
+
 #if defined(Q_OS_IOS) || defined(Q_OS_MACOS)
-    // Documents directory (user-visible, backed up)
-    QString documentsPath = LOG_DIR;
+    // Normal filesystem path on macOS and iOS
+    const QString documentsPath = LOG_DIR;
+    qDebug() << "Log directory:" << documentsPath;
     QDir dir(documentsPath);
     if (!dir.exists()) {
-        dir.mkpath(".");
+        if (!dir.mkpath(".")) {
+            qWarning() << "Could not create log directory:"
+                       << documentsPath;
+        }
     }
+
+#elif defined(Q_OS_ANDROID)
+/*
+     * Do not create /storage/emulated/0/Download/... using QDir.
+     *
+     * SharedStorage.java creates the public directory automatically
+     * through MediaStore when the first file is written.
+     */
+
+qDebug() << "Android logs will be stored in:"
+         << "Download/LowEnergyScanner/";
 #endif
 
     ui->setupUi(this);
@@ -215,6 +234,16 @@ MainWindow::MainWindow(QWidget *parent)
     QString data = "System booted at: "+QDateTime::currentDateTime().toString();
     ui->listView->appendPlainText(data);
 
+#ifdef Q_OS_ANDROID
+    const bool success = SharedStorage::appendTextFile("LowEnergyScanner","flightlog.txt",data);
+    if (!success) {
+        qWarning() << "Could not write transponder log";
+    }
+    else{
+        qWarning() << QString(FLIGHTLOG) << " at " << "LowEnergyScanner";
+    }
+
+#else
     QFile *l_file = new QFile(QString(LOG_DIR)+ QString(FLIGHTLOG));
     if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
     {
@@ -224,6 +253,8 @@ MainWindow::MainWindow(QWidget *parent)
     else{
         qDebug() << "Log file error...  ";
     }
+#endif
+
     // try to actually initialize camera & mic
 #ifndef TRANSPONDER_ONLY
     init();
@@ -2305,8 +2336,9 @@ void MainWindow::getTransponderVal() //const QByteArray &array)
     /// ----------------------------------------------------
     if(this->mysocket->transponder_command_a[0] != '-')
     {
-        float number;
-        char numout[20];
+        float number = 0.0;
+        float meters = 0.0;
+        char numout[20] = {0};
         if(this->mysocket->transponder_command_a[2] == '?'){
             this->mysocket->transponder_command_a[2] = '1';
             this->mysocket->transponder_command_a[3] = 'M';
@@ -2314,38 +2346,65 @@ void MainWindow::getTransponderVal() //const QByteArray &array)
         }
         sscanf(this->mysocket->transponder_command_a,"a=%f",&number);
         QString altType="Alt.Ft.";
+        meters = number;
 
+        // If we are to use feet...
         if(this->alt_mode == 1)
         {
             for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
             {
+                // If meter is reported...
                 if(this->mysocket->transponder_command_a[key]=='M')
                 {
                     number*=3.2808399;
                     break;
                 }
+                else{
+                    meters = number/3.2808399;
+                }
             }
-            this->m_tansALT = round(number/100.0)*100;
+            this->m_tansALT = std::ceil(number / 100.0) * 100.0;
         }
+        // If we are to use meter...
         else{
             for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
             {
+                // IF feet is reported...
                 if(this->mysocket->transponder_command_a[key]=='F')
                 {
                     number/=3.2808399;
+                    meters = number;
                     break;
                 }
             }
             this->m_tansALT = round(number);
             altType="Alt.M.";
         }
+        // If we are in AUTO mode, and the internal altimeter reports 0, then switch to the external if it exists...
+
+        if(meters > 160 || meters < 140){
+            qDebug() << meters;
+        }
+
+        if( (meters < 0.1 || meters > 5000 ) &&
+          this->mysocket->Transponder_altitude_mode == 2 &&
+          this->mysocket->m_altitude > 0)
+        {
+            mysocket->TransponderMode(false);
+            mysocket->Transponder_altitude_mode = 1;
+            ui->pushButton_27->setText("EXT");
+
+            this->m_tansALT = this->mysocket->m_altitude ;
+            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
+
+        }
         snprintf(numout,20,"%.4d",(int)this->m_tansALT);
         this->ui->lcdNumber_3->display(numout);
         this->ui->lcdNumber_3->update();
+        this->ui->plainTextEdit->appendPlainText(QString("Altitude to display: ") + numout);
         this->ui->label_2->setText(altType);
         this->ui->label_2->update();
-
-//                        local_ui->baro_alt->setText(numout);
+//      this->ui->baro_alt->setText(numout);
 
         // We assume that altitude never will is zero, this might not hold,
         // but there has been some issues with the altitude encoder so we do this any how...
@@ -2358,7 +2417,7 @@ void MainWindow::getTransponderVal() //const QByteArray &array)
     /// ----------------------------------------------------
     if(this->mysocket->transponder_command_z[0] != '-')
     {
-        qDebug() << "T: %s\r\n" << &this->mysocket->transponder_command_z[2];
+//        qDebug() << "T: %s\r\n" << &this->mysocket->transponder_command_z[2];
         this->ui->plainTextEdit->appendPlainText(&this->mysocket->transponder_command_z[2]);
         this->ui->plainTextEdit->update();
         this->mysocket->transponder_command_z[0] = '-';
@@ -2367,7 +2426,7 @@ void MainWindow::getTransponderVal() //const QByteArray &array)
     /// ----------------------------------------------------
     if(this->mysocket->transponder_command_p != '-')
     {
-        qDebug() << "P: %c\r\n" << &this->mysocket->transponder_command_p;
+//        qDebug() << "P: %c\r\n" << &this->mysocket->transponder_command_p;
 
         bool state=true;
         if (this->mysocket->transponder_command_p == '1') state = false;
@@ -2484,6 +2543,55 @@ void MainWindow::on_pushButton_Ident_clicked()
 {
     mysocket->readyWrite((char*)"\x02" "i=s" "\x03");
 }
+
+void MainWindow::on_pushButton_27_clicked()
+{
+
+    QString text = ui->pushButton_27->text();
+    if(text == "TRA"){
+        ui->pushButton_27->setText("EXT");
+        qDebug() << "Alt Mode: " << "EXT";
+
+        mysocket->Transponder_altitude_mode = 1;
+        mysocket->TransponderMode(false);
+
+        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
+    }
+    else if(text == "EXT"){
+        ui->pushButton_27->setText("AUTO");
+        qDebug() << "Alt Mode: " << "AUTO";
+
+        mysocket->Transponder_altitude_mode = 2;
+        mysocket->TransponderMode(true);
+
+        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
+    }
+    else if(text == "AUTO"){
+        ui->pushButton_27->setText("TRA");
+        qDebug() << "Alt Mode: " << "TRA";
+
+        mysocket->Transponder_altitude_mode = 0;
+        mysocket->TransponderMode(true);
+
+        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
+    }
+    else{
+        text = "TRA";
+        qDebug() << "Alt Mode: " << "TRA";
+
+        mysocket->Transponder_altitude_mode = 0;
+        qDebug() << "This should not happen... #001";
+
+        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
+    }
+/*
+
+    dTODO set Serial mode on Transponder, if connected,
+        and start transmitting altitude from the local sensor...
+*/
+//    this->alt_mode = alt_mode;
+}
+
 
 // Set mode...
 void MainWindow::on_pushButton_stby_clicked(){setmode(1);}

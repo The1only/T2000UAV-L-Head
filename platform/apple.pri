@@ -142,15 +142,7 @@ ios {
         $$PWD/../Source/generic/mainwindow.cpp \
         $$PWD/../Source/generic/mytcpsocket.cpp \
         $$PWD/../Source/generic/INS_driver.cpp \
-        $$PWD/../Source/generic/ssdp.cpp\
         $$PWD/../Source/generic/mytcpsocket.cpp \
-        $$PWD/../Source/generic/tcpclient.cpp \
-        $$PWD/../EKF_IMU_GPS/ekf_nav_ins/src/ekfNavINS.cpp \
-        $$PWD/../Source/driver/rotation_matrix.cpp \
-        $$PWD/../Source/driver/gpx_parse.cpp \
-        $$PWD/../Source/driver/mqttclient.cpp \
-        $$PWD/../Source/driver/wit_c_sdk.c \
-        $$PWD/../Source/driver/geoid_helper.cpp \
 
 #        $$PWD/../Source/generic/multicastlistner.cpp \
 

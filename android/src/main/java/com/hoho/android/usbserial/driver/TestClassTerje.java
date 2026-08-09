@@ -527,6 +527,7 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
                 status("setParameters unsupported: "
                         + e.getMessage());
             }
+            status("Serial= -1");
 
             if (withIoManager) {
                 usbIoManager =
@@ -534,10 +535,11 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
                                 usbSerialPort,
                                 this
                         );
-
+                status("Serial= -2");
                 usbIoManager.start();
+                status("Serial= -3");
             }
-
+            status("Serial= -4");
             connected = true;
 
             /*
@@ -545,9 +547,7 @@ public class TestClassTerje implements SerialInputOutputManager.Listener {
              * variable was decremented while searching for the device.
              */
             g_portNum = requestedPortNum;
-
             usbSerialPort.setDTR(true);
-
             status("connected to port " + requestedPortNum);
 
             try {
