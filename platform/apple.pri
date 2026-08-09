@@ -43,40 +43,16 @@ macx {
         ./Source/generic/main.cpp \
         ./Source/generic/mainwindow.cpp \
         ./Source/generic/mytcpsocket.cpp \
-        ./Source/generic/ins_driver.cpp \
-        ./Source/generic/ssdp.cpp \
-        ./Source/generic/tcpclient.cpp \
-        ./Source/driver/rotation_matrix.cpp \
-        ./Source/driver/gpx_parse.cpp \
-        ./Source/driver/bleuart.cpp \
-        ./Source/driver/mqttclient.cpp \
         ./Source/driver/serialport.cpp \
-        ./Source/driver/wit_c_sdk.c \
-        ./Source/driver/geoid_helper.cpp \
-        ./EKF_IMU_GPS/ekf_nav_ins/src/ekfNavINS.cpp \
 
 #        ./Source/generic/multicastlistner.cpp \
 
 
     HEADERS += \
-        ./Header/generic/ssdp.h \
         ./Header/generic/mainwindow.h \
         ./Header/generic/mytcpsocket.h \
         ./Header/generic/reg.h \
-        ./Header/generic/tcpclient.h \
-        ./Header/driver/bleuart.h \
-        ./Header/driver/rotation_matrix.h \
-        ./Header/driver/gpx_parse.h \
-        ./Header/driver/mqttclient.h \
         ./Header/driver/serialport.h \
-        ./Header/driver/wit_c_sdk.h \
-        ./Header/driver/geoid_helper.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS_quart.h \
-
-# ./example/Headers/QuickWidget.h \
-#        ./Header/generic/multicastlistner.h \
-
 
 }
 
@@ -141,8 +117,6 @@ ios {
         $$PWD/../Source/generic/main.cpp \
         $$PWD/../Source/generic/mainwindow.cpp \
         $$PWD/../Source/generic/mytcpsocket.cpp \
-        $$PWD/../Source/generic/INS_driver.cpp \
-        $$PWD/../Source/generic/mytcpsocket.cpp \
 
 #        $$PWD/../Source/generic/multicastlistner.cpp \
 
@@ -152,16 +126,7 @@ ios {
     HEADERS += \
         ./Header/generic/mainwindow.h \
         ./Header/generic/mytcpsocket.h \
-        ./Header/generic/ssdp.h \
-        ./Header/generic/mytcpsocket.h \
         ./Header/generic/REG.h \
-        ./Header/generic/tcpclient.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS_quart.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS.h \
-        ./Header/driver/rotation_matrix.h \
-        ./Header/driver/gpx_parse.h \
-        ./Header/driver/mqttclient.h \
-        ./Header/driver/wit_c_sdk.h \
 
 #./Header/generic/multicastlistner.h \
 
