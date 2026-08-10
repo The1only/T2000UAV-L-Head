@@ -1,46 +1,48 @@
 /**
  * @file mainwindow.cpp
- * @brief Implementation of MainWindow.
+ * @brief Implementation of the main Glasscockpit / transponder UI window.
  *
- * Contains the implementation details for the MainWindow class.
+ * MainWindow is responsible for the graphical presentation and user control
+ * of the transponder and altitude subsystem.
+ *
+ * Communication with MyTcpSocket is signal-driven. Incoming transponder and
+ * external-altimeter information is transferred through Qt signals using
+ * queued connections rather than by polling shared communication buffers.
+ *
+ * This provides a clear ownership model:
+ *
+ * @code
+ * Communication thread / callback
+ *              |
+ *              | emit signal
+ *              v
+ *       Qt queued connection
+ *              |
+ *              v
+ *        MainWindow thread
+ *              |
+ *              v
+ *          Update GUI
+ * @endcode
+ *
+ * Main responsibilities:
+ * - Initialize the user interface.
+ * - Initialize the optional platform pressure sensor.
+ * - Display transponder operating mode, IDENT state and squawk code.
+ * - Display altitude in feet or meters.
+ * - Select altitude source:
+ *      - TRA  : transponder altitude
+ *      - EXT  : external altimeter
+ *      - INT  : internal pressure sensor
+ *      - AUTO : automatically select a usable source
+ * - Maintain communication and altitude watchdog indicators.
+ * - Write a startup entry to the flight log.
+ * - Recreate the communication subsystem on request.
+ *
+ * Platform-specific logging:
+ * - Android uses SharedStorage / MediaStore.
+ * - macOS and iOS use QFile and LOG_DIR.
  */
-
-#include <QtCore/QLoggingCategory>
-#include <QQmlContext>
-#include <QGuiApplication>
-#include <QColorDialog>
-#include <QNetworkInterface>
-#include <QTimer>
-#include <cstdio>
-#include <QApplication>
-#include <QElapsedTimer>
-#include <QFile>
-#include <QDir>
-#include <QStandardPaths>
-#include <QQuickWidget>
-#include <QQmlProperty>
-#include <QPermission>
-#include <QActionGroup>
-#include <QVideoWidget>
-#include <QCameraDevice>
-#include <QPixmap>
-#include <QMediaRecorder>
-#include <QImageCapture>
-#include <QMediaFormat>
-#include <QMediaPlayer>
-#include <QOrientationSensor>
-#include <QImageCapture>
-#include <QList>
-#include <QSplashScreen>
-#include <QtMath>  // for qDegreesToRadians, qRadiansToDegrees
-//#include <deque>
-#include <QThread>
-
-//***C++11 Style:***
-//#include <chrono>
-
-#include <QtCharts/QChartView>
-#include <QtCharts/QSplineSeries>
 
 #include "mainwindow.h"
 #include "mytcpsocket.h"
@@ -49,683 +51,2119 @@
 #include "sharedstorage.h"
 #endif
 
-using namespace std;
-using namespace std::chrono;
+#include <QApplication>
+#include <QDateTime>
+#include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QIcon>
+#include <QLocationPermission>
+#include <QPermission>
+#include <QPixmap>
+#include <QPressureSensor>
+#include <QPushButton>
+#include <QSensor>
+#include <QSplashScreen>
+#include <QTimer>
 
-// ----------------------------------------------
-// ----------------------------------------------
+#include <cmath>
+#include <cstdio>
+
+
+/**
+ * @brief File-local constants and helper functions.
+ *
+ * The anonymous namespace prevents these symbols from being exported outside
+ * this translation unit.
+ */
+namespace
+{
+
+/**
+ * @brief Number of feet in one meter.
+ *
+ * Used for all altitude conversions between metric and imperial units.
+ */
+constexpr double FeetPerMeter = 3.2808399;
+
+
+/**
+ * @brief Standard ISA sea-level pressure in hPa.
+ *
+ * Pressure altitude is referenced to 1013.25 hPa rather than local QNH.
+ */
+constexpr double StandardPressureHpa = 1013.25;
+
+
+/**
+ * @brief Constant used by the standard pressure-altitude approximation.
+ *
+ * The resulting altitude is expressed in meters.
+ */
+constexpr double PressureAltitudeConstantMeters = 44330.0;
+
+
+/**
+ * @brief Exponent used by the pressure-altitude approximation.
+ */
+constexpr double PressureAltitudeExponent = 0.190284;
+
+
+/**
+ * @brief Interval between altitude-data watchdog checks.
+ */
+constexpr int AltitudeStatusIntervalMs = 5000;
+
+
+/**
+ * @brief Time communication activity remains indicated after a message.
+ */
+constexpr int ActivityTimeoutMs = 5000;
+
+
+/**
+ * @brief Time the transponder ping indicator remains active.
+ */
+constexpr int PingTimeoutMs = 10000;
+
+
+/*
+ * Style-sheet tokens used by the existing Qt Designer button styles.
+ *
+ * These are substrings within the existing style sheets rather than complete
+ * CSS definitions.
+ */
+constexpr auto ColorInactive  = "1 #888";
+constexpr auto ColorGreen     = "1 #2A0";
+constexpr auto ColorStatusOk  = "1 #090";
+constexpr auto ColorStatusBad = "1 #900";
+
+
+/**
+ * @brief Replace one color token in a push-button style sheet.
+ *
+ * The style sheet is only changed when @p from is actually present. This
+ * avoids unnecessary style-sheet assignments when the button is already in
+ * the requested state.
+ *
+ * @param button Button whose style should be modified.
+ * @param from Existing style token.
+ * @param to Replacement style token.
+ */
+void replaceButtonColor(QPushButton *button,
+                        const QString &from,
+                        const QString &to)
+{
+    if (!button)
+        return;
+
+    QString style = button->styleSheet();
+
+    if (!style.contains(from))
+        return;
+
+    style.replace(from, to);
+
+    button->setStyleSheet(style);
+}
+
+
+/**
+ * @brief Set a transponder-mode button active or inactive.
+ *
+ * Active mode buttons use the existing green style token, while inactive
+ * buttons use the grey style token.
+ *
+ * @param button Button to modify.
+ * @param active true to mark the button active, false to mark it inactive.
+ */
+void setModeButtonActive(QPushButton *button,
+                         bool active)
+{
+    if (active)
+    {
+        replaceButtonColor(
+            button,
+            ColorInactive,
+            ColorGreen);
+    }
+    else
+    {
+        replaceButtonColor(
+            button,
+            ColorGreen,
+            ColorInactive);
+    }
+}
+
+
+/**
+ * @brief Convert altitude from meters to feet.
+ *
+ * @param meters Altitude in meters.
+ * @return Altitude in feet.
+ */
+double metersToFeet(double meters)
+{
+    return meters * FeetPerMeter;
+}
+
+
+/**
+ * @brief Convert altitude from feet to meters.
+ *
+ * @param feet Altitude in feet.
+ * @return Altitude in meters.
+ */
+double feetToMeters(double feet)
+{
+    return feet / FeetPerMeter;
+}
+
+} // namespace
+
+
+/**
+ * @brief Construct and initialize the main application window.
+ *
+ * Startup sequence:
+ * - Prepare the platform-specific log directory.
+ * - Initialize widgets generated by Qt Designer.
+ * - Limit the on-screen diagnostic history.
+ * - Optionally show the iOS splash screen.
+ * - Initialize current and pending squawk-code displays.
+ * - Create MyTcpSocket.
+ * - Establish signal/slot communication with MyTcpSocket.
+ * - Initialize platform sensors and watchdog timers.
+ * - Command the transponder into standby.
+ * - Append a startup timestamp to the flight log.
+ *
+ * @param parent Parent widget, normally nullptr for the main application
+ *               window.
+ */
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
 
-/*
-    QSize design(800, 600);
-    QSize screen = QGuiApplication::primaryScreen()->size();
-
-    float scale = qMin(
-        screen.width() / float(design.width()),
-        screen.height() / float(design.height())
-        );
-
-    this->resize(design * scale);
-    this->setFixedSize(this->size());
-*/
-
-
 #if defined(Q_OS_IOS) || defined(Q_OS_MACOS)
-    // Normal filesystem path on macOS and iOS
+
+    /*
+     * macOS and iOS use a conventional filesystem directory.
+     */
     const QString documentsPath = LOG_DIR;
-    qDebug() << "Log directory:" << documentsPath;
+
+    qDebug() << "Log directory:"
+             << documentsPath;
+
     QDir dir(documentsPath);
-    if (!dir.exists()) {
-        if (!dir.mkpath(".")) {
-            qWarning() << "Could not create log directory:"
-                       << documentsPath;
-        }
+
+    /*
+     * Create the log directory if it does not already exist.
+     */
+    if (!dir.exists() &&
+        !dir.mkpath("."))
+    {
+        qWarning()
+        << "Could not create log directory:"
+        << documentsPath;
     }
 
 #elif defined(Q_OS_ANDROID)
-/*
-     * Do not create /storage/emulated/0/Download/... using QDir.
-     *
-     * SharedStorage.java creates the public directory automatically
-     * through MediaStore when the first file is written.
-     */
 
-qDebug() << "Android logs will be stored in:"
-         << "Download/LowEnergyScanner/";
+    /*
+     * Android public files are written through SharedStorage / MediaStore.
+     * No direct QDir creation is necessary here.
+     */
+    qDebug()
+        << "Android logs:"
+        << "Download/LowEnergyScanner/";
+
 #endif
 
+
+    // ---------------------------------------------------------------------
+    // User interface
+    // ---------------------------------------------------------------------
+
+    /*
+     * Instantiate all widgets generated by Qt Designer.
+     */
     ui->setupUi(this);
 
-// The splash screen does not make sense on a PC... but it works if you need it...
-//#if defined(Q_OS_IOS) || defined(Q_OS_MACOS)
+    /*
+     * Keep only the newest 50 diagnostic text blocks. QPlainTextEdit removes
+     * older blocks automatically as new messages are appended.
+     */
+    ui->plainTextEdit
+        ->document()
+        ->setMaximumBlockCount(50);
+
+
 #if defined(Q_OS_IOS)
-    QPixmap splashPixmap(":/images/splash.png");  // Or use a file path
-    splash = new QSplashScreen(splashPixmap);
+
+    /*
+     * Display the startup splash screen on iOS.
+     */
+    QPixmap splashPixmap(
+        ":/images/splash.png");
+
+    splash =
+        new QSplashScreen(
+            splashPixmap);
+
     splash->autoFillBackground();
-//    splash->showMessage("Initializing Flight IMU...", Qt::AlignTop | Qt::AlignCenter, Qt::black);
     splash->show();
+
 #endif
 
-    // --------------------------
 
-   // ui->quickWidget->setSource(QUrl("qrc:/places_map.qml"));
-   // ui->quickWidget->rootObject()->setProperty("zoomLevel", 35); // 18);
+    // ---------------------------------------------------------------------
+    // Initial transponder display
+    // ---------------------------------------------------------------------
 
-    ui->plainTextEdit->document()->setMaximumBlockCount(50);
-    ui->lcdNumber->display(QString::number(this->current[0]*1000+this->current[1]*100+this->current[2]*10+this->current[3]).rightJustified(4, '0'));
-    ui->lcdNumber_2->display(QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]).rightJustified(4, '0'));
-    ui->plainTextEdit->appendPlainText("Glasscockpit 200-UAV v1.02a");
+    /*
+     * Convert the four stored current-code digits into one integer for the
+     * LCD display.
+     */
+    const int currentCode =
+        current[0] * 1000 +
+        current[1] * 100 +
+        current[2] * 10 +
+        current[3];
 
-    // This code must be rewritten as it is depending on timeing and speed.
-    // The serial ports shuld be a parameter to the constructor...
-    // The m_calibrate shuld be set in a different manner...
-    // Remember that the MyTcpSocket spawns a slower process only...
-    this->mysocket = new MyTcpSocket(this, ui->plainTextEdit);
+    /*
+     * Convert the four pending-code digits into one integer.
+     */
+    const int nextCode =
+        next[0] * 1000 +
+        next[1] * 100 +
+        next[2] * 10 +
+        next[3];
 
-    // ------------------------------
-    // Set STBY mode on transponder...
-    setmode(1);
-//    m_timer.start();
+    /*
+     * Preserve all four digits, including leading zeroes.
+     */
+    ui->lcdNumber->display(
+        QString::number(currentCode)
+            .rightJustified(4, '0'));
 
+    ui->lcdNumber_2->display(
+        QString::number(nextCode)
+            .rightJustified(4, '0'));
+
+    /*
+     * Application identification shown in the diagnostic window.
+     */
+    ui->plainTextEdit->appendPlainText(
+        "Glasscockpit 200-UAV v1.02a");
+
+
+    // ---------------------------------------------------------------------
+    // Communication subsystem
+    // ---------------------------------------------------------------------
+
+    /*
+     * Create the device communication subsystem.
+     *
+     * Despite its historical name, MyTcpSocket handles both serial and
+     * network-based communication.
+     */
+    mysocket =
+        new MyTcpSocket(
+            this,
+            ui->plainTextEdit);
+
+    /*
+     * Establish all signal/slot connections used for thread-safe data
+     * transfer between MyTcpSocket and MainWindow.
+     */
+    connectTransponderSignals();
+
+
+    // ---------------------------------------------------------------------
+    // Sensors and timers
+    // ---------------------------------------------------------------------
+
+    /*
+     * Discover the internal pressure sensor and initialize watchdog timers.
+     */
     init();
 
-    QString data = "System booted at: "+QDateTime::currentDateTime().toString();
+
+    // ---------------------------------------------------------------------
+    // Initial transponder state
+    // ---------------------------------------------------------------------
+
+    /*
+     * Request standby mode during application startup.
+     */
+    setmode(1);
+
+
+    // ---------------------------------------------------------------------
+    // Startup logging
+    // ---------------------------------------------------------------------
+
+    /*
+     * Create the application-start log message.
+     */
+    const QString data =
+        "System booted at: " +
+        QDateTime::currentDateTime().toString() +
+        '\n';
 
 #ifdef Q_OS_ANDROID
-    const bool success = SharedStorage::appendTextFile("LowEnergyScanner","flightlog.txt",data);
-    if (!success) {
-        qWarning() << "Could not write transponder log";
-    }
-    else{
-        qWarning() << QString(FLIGHTLOG) << " at " << "LowEnergyScanner";
+
+    /*
+     * Android logging is performed through SharedStorage, which uses
+     * Android MediaStore.
+     */
+    if (!SharedStorage::appendTextFile(
+            "LowEnergyScanner",
+            "flightlog.txt",
+            data))
+    {
+        qWarning()
+        << "Could not write flight log";
     }
 
 #else
-    QFile *l_file = new QFile(QString(LOG_DIR)+ QString(FLIGHTLOG));
-    if( l_file->open(QIODevice::ReadWrite | QIODevice::Append ))
+
+    /*
+     * macOS and iOS use a conventional QFile.
+     */
+    QFile logFile(
+        QString(LOG_DIR) +
+        QString(FLIGHTLOG));
+
+    if (!logFile.open(
+            QIODevice::WriteOnly |
+            QIODevice::Append |
+            QIODevice::Text))
     {
-        l_file->write(data.toLocal8Bit()+"\n");
-        l_file->close();
+        qWarning()
+        << "Could not open flight log:"
+        << logFile.fileName()
+        << logFile.errorString();
     }
-    else{
-        qDebug() << "Log file error...  ";
+    else
+    {
+        logFile.write(
+            data.toUtf8());
     }
+
 #endif
 
-    m_msgBox = new NoButtonMessageBox(tr("Please wait for the system to boot!"));
- //   m_msgBox->show();
 
-    // Start the clock....
-    qDebug() << "  Transponder update...  ";
-    m_Transponder = new QTimer(this);
-    m_Transponder->setSingleShot(false);
-    connect(m_Transponder, SIGNAL(timeout()), this, SLOT(getTransponderVal()));
-    m_Transponder->start(250);
+    /*
+     * Create the startup information box. It is currently constructed but
+     * not explicitly shown here.
+     */
+    m_msgBox =
+        new NoButtonMessageBox(
+            tr("Please wait for the system to boot!"));
 }
 
+
+/**
+ * @brief Destroy the main application window.
+ *
+ * Qt automatically destroys child QObjects owned by MainWindow.
+ */
 MainWindow::~MainWindow()
 {
-    qDebug() << "Exiting...";
-    qApp->closeAllWindows();
+    qDebug()
+    << "Exiting application";
 }
 
-//***************************************************************************************************************//
-void MainWindow::setButtonIcon(QString iconPath, QPushButton* button)
+
+/**
+ * @brief Connect the communication subsystem to MainWindow.
+ *
+ * All receive-side connections use Qt::QueuedConnection. This ensures that
+ * slots modifying GUI widgets execute in MainWindow's thread even when the
+ * originating signal is emitted from a communication callback or another
+ * thread.
+ *
+ * Two signals are also connected in the opposite direction:
+ * - localAltitudeChanged() transfers locally calculated altitude.
+ * - transponderAltitudeModeChanged() transfers the selected altitude source.
+ *
+ * This function must be called again whenever @c mysocket is recreated.
+ */
+void MainWindow::connectTransponderSignals()
 {
-    QString str("Test");
-    qApp->applicationDirPath().append(iconPath);
-    QPixmap pixmap(str);
-    QIcon buttonIcon(pixmap);
-    button->setIcon(buttonIcon);
-    button->setIconSize(pixmap.rect().size());
+    if (!mysocket)
+        return;
+
+
+    /*
+     * Generic transponder communication activity.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderActivity,
+        this,
+        &MainWindow::onTransponderActivity,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Transponder ping / keepalive indication.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderPingReceived,
+        this,
+        &MainWindow::onTransponderPing,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Transponder operating-mode response.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderModeReceived,
+        this,
+        &MainWindow::onTransponderMode,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Transponder annunciator response.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderAnnunciatorReceived,
+        this,
+        &MainWindow::onTransponderAnnunciator,
+        Qt::QueuedConnection);
+
+
+    /*
+     * IDENT state.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderIdentReceived,
+        this,
+        &MainWindow::onTransponderIdent,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Squawk-code response.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderCodeReceived,
+        this,
+        &MainWindow::onTransponderCode,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Altitude response.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderAltitudeReceived,
+        this,
+        &MainWindow::onTransponderAltitude,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Text / version / status response.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderTextReceived,
+        this,
+        &MainWindow::onTransponderText,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Hardware self-test result.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderHardwareStatusReceived,
+        this,
+        &MainWindow::onTransponderHardwareStatus,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Transponder altitude-data mode.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::transponderDataModeReceived,
+        this,
+        &MainWindow::onTransponderDataMode,
+        Qt::QueuedConnection);
+
+
+    /*
+     * External-altimeter measurement.
+     */
+    connect(
+        mysocket,
+        &MyTcpSocket::externalAltimeterReceived,
+        this,
+        &MainWindow::onExternalAltimeter,
+        Qt::QueuedConnection);
+
+
+    /*
+     * GUI -> communication subsystem.
+     *
+     * Transfer a locally selected/calculated altitude without directly
+     * writing communication-owned variables.
+     */
+    connect(
+        this,
+        &MainWindow::localAltitudeChanged,
+        mysocket,
+        &MyTcpSocket::setLocalAltitude,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Transfer the currently selected altitude source.
+     */
+    connect(
+        this,
+        &MainWindow::transponderAltitudeModeChanged,
+        mysocket,
+        &MyTcpSocket::setTransponderAltitudeMode,
+        Qt::QueuedConnection);
+
+
+    /*
+     * Ensure a newly created MyTcpSocket immediately receives the current
+     * altitude-source selection.
+     */
+    emit transponderAltitudeModeChanged(
+        m_altitudeSourceMode);
 }
 
-void MainWindow::permissionUpdated(const QPermission &permission)
+
+/**
+ * @brief Assign an icon to a push button.
+ *
+ * Loads an image from @p iconPath and assigns it to @p button.
+ *
+ * @param iconPath File or Qt resource path to the image.
+ * @param button Destination push button.
+ */
+void MainWindow::setButtonIcon(
+    QString iconPath,
+    QPushButton *button)
 {
-    if (permission.status() != Qt::PermissionStatus::Granted)
+    if (!button)
+        return;
+
+    const QPixmap pixmap(iconPath);
+
+    if (pixmap.isNull())
     {
-        qDebug() << "Precise location permission denied";
+        qWarning()
+        << "Could not load icon:"
+        << iconPath;
+
         return;
     }
-    auto locationPermission = permission.value<QLocationPermission>();
-    if (!locationPermission || locationPermission->accuracy() != QLocationPermission::Precise)
-    {
-        qDebug() << "Precise location permission error";
-        return;
-    }
-    qDebug() << "Precise location OK";
+
+    button->setIcon(
+        QIcon(pixmap));
+
+    button->setIconSize(
+        pixmap.size());
 }
 
-// Call back funtion from the sensor handler...
+
+/**
+ * @brief Process completion of a location-permission request.
+ *
+ * The function requires both general permission approval and precise-location
+ * accuracy.
+ *
+ * @param permission Permission object returned by Qt.
+ */
+void MainWindow::permissionUpdated(
+    const QPermission &permission)
+{
+    if (permission.status() !=
+        Qt::PermissionStatus::Granted)
+    {
+        qWarning()
+        << "Precise location permission denied";
+
+        return;
+    }
+
+    const auto locationPermission =
+        permission.value<QLocationPermission>();
+
+    if (!locationPermission ||
+        locationPermission->accuracy() !=
+            QLocationPermission::Precise)
+    {
+        qWarning()
+        << "Precise location unavailable";
+
+        return;
+    }
+
+    qDebug()
+        << "Precise location granted";
+}
+
+
+/**
+ * @brief Initialize available sensors and housekeeping timers.
+ *
+ * Enumerates Qt sensor types and identifiers for diagnostic purposes.
+ *
+ * If a QPressureSensor is available:
+ * - Create the sensor.
+ * - Connect readingChanged() to onPressureReadingChanged().
+ * - Request a 4 Hz data rate.
+ * - Start acquisition.
+ *
+ * Timers initialized:
+ * - timerPing   : transponder ping watchdog.
+ * - timerActive : general communication watchdog.
+ * - timerAlt    : altitude-data watchdog.
+ */
 void MainWindow::init()
 {
-    QList<QSensor*> mySensorList;
-
-    for (const QByteArray &type : QSensor::sensorTypes())
+    /*
+     * Enumerate every sensor type exposed by Qt Sensors.
+     */
+    for (const QByteArray &type :
+         QSensor::sensorTypes())
     {
-        qDebug() << "Found a sensor type:" << type;
+        qDebug()
+        << "Sensor type:"
+        << type;
 
-        for (const QByteArray &identifier : QSensor::sensorsForType(type))
+        /*
+         * Enumerate hardware identifiers associated with this sensor type.
+         */
+        for (const QByteArray &identifier :
+             QSensor::sensorsForType(type))
         {
-            qDebug() << "    " << "Found a sensor of that type:" << identifier;
-            QSensor* sensor = new QSensor(type, this);
-            sensor->setIdentifier(identifier);
-            mySensorList.append(sensor);
+            qDebug()
+            << "    Sensor:"
+            << identifier;
         }
 
-        if(!strncmp(type,"QPressureSensor",strlen("QPressureSensor")))
+        /*
+         * Create the internal pressure sensor when available.
+         */
+        if (type ==
+            QByteArrayLiteral(
+                "QPressureSensor"))
         {
-            this->m_pressure_sensor = new QPressureSensor();
-            connect(this->m_pressure_sensor, SIGNAL(readingChanged()), this, SLOT(onPressureReadingChanged()));
-            this->m_pressure_sensor->start();
-            this->m_pressure_sensor->setDataRate(4);
-            qDebug() << "Found a sensor QPressureSensor";
+            m_pressure_sensor =
+                new QPressureSensor(this);
+
+            connect(
+                m_pressure_sensor,
+                &QPressureSensor::readingChanged,
+                this,
+                &MainWindow::onPressureReadingChanged);
+
+            /*
+             * Request approximately four pressure measurements per second.
+             */
+            m_pressure_sensor->setDataRate(4);
+
+            if (!m_pressure_sensor->start())
+            {
+                qWarning()
+                << "Could not start QPressureSensor";
+            }
         }
     }
 
-    qDebug() << mySensorList;
 
-    qDebug() << "  timerPing  ";
-    timerPing = new QTimer(this);
+    /*
+     * Ping watchdog.
+     *
+     * Restarted each time a ping is received.
+     */
+    timerPing =
+        new QTimer(this);
+
     timerPing->setSingleShot(true);
-    connect(timerPing, SIGNAL(timeout()), this, SLOT(reset_ping()));
 
-    qDebug() << "  timerActive ";
-    timerActive = new QTimer(this);
+    connect(
+        timerPing,
+        &QTimer::timeout,
+        this,
+        &MainWindow::reset_ping);
+
+
+    /*
+     * General communication watchdog.
+     *
+     * Restarted whenever a valid transponder response is received.
+     */
+    timerActive =
+        new QTimer(this);
+
     timerActive->setSingleShot(true);
-    connect(timerActive, SIGNAL(timeout()), this, SLOT(active_ping()));
 
-    qDebug() << "  timerAlt  ";
-    timerAlt = new QTimer(this);
-    timerAlt->setSingleShot(false);
-    connect(timerAlt, SIGNAL(timeout()), this, SLOT(doCheck()));
-    timerAlt->start(5000);
+    connect(
+        timerActive,
+        &QTimer::timeout,
+        this,
+        &MainWindow::active_ping);
 
-    QCoreApplication::processEvents();
+
+    /*
+     * Altitude watchdog.
+     *
+     * Periodically verifies that usable altitude data continues to arrive.
+     */
+    timerAlt =
+        new QTimer(this);
+
+    connect(
+        timerAlt,
+        &QTimer::timeout,
+        this,
+        &MainWindow::doCheck);
+
+    timerAlt->start(
+        AltitudeStatusIntervalMs);
 }
 
+
+/**
+ * @brief Process a new internal pressure-sensor reading.
+ *
+ * Qt reports pressure in Pa. The value is converted to hPa and then converted
+ * to ISA pressure altitude in meters using the standard 1013.25 hPa reference.
+ *
+ * The resulting value is always stored in @c m_internalAltitude. It is sent
+ * to MyTcpSocket only when the INT altitude source is currently selected.
+ */
 void MainWindow::onPressureReadingChanged()
 {
-    if(m_pressure_sensor != nullptr && mysocket->Transponder_altitude_mode == 3){
-        m_pressure_reader = m_pressure_sensor->reading();
-        float m_pressure_raw =  m_pressure_reader->pressure()/100.0;
-        // Meters...
-        this->mysocket->m_altitude = 44330.0 * (1.0 - std::pow(m_pressure_raw / 1013.25, 0.190284));
-        // feet...
-       // this->mysocket->m_preasure_alt = 145366.45 * (1.0 - std::pow(m_pressure_raw / 1013.25, 0.190284));
+    if (!m_pressure_sensor)
+        return;
 
+    m_pressure_reader =
+        m_pressure_sensor->reading();
+
+    if (!m_pressure_reader)
+        return;
+
+    /*
+     * Convert Pa -> hPa / mbar.
+     */
+    const double pressureHpa =
+        m_pressure_reader->pressure() /
+        100.0;
+
+    /*
+     * Calculate ISA pressure altitude in meters.
+     */
+    m_internalAltitude =
+        PressureAltitudeConstantMeters *
+        (1.0 -
+         std::pow(
+             pressureHpa /
+                 StandardPressureHpa,
+             PressureAltitudeExponent));
+
+
+    /*
+     * Only make the internal pressure altitude the communication
+     * subsystem's active local altitude while INT is selected.
+     */
+    if (m_altitudeSourceMode == 3)
+    {
+        emit localAltitudeChanged(
+            m_internalAltitude);
     }
 }
 
+
+/**
+ * @brief Process a complete external-altimeter measurement.
+ *
+ * The current MainWindow logic requires only altitude, but the complete
+ * measurement is delivered by the signal for future use.
+ *
+ * When EXT is selected, the external altitude is forwarded to MyTcpSocket as
+ * the active locally supplied altitude.
+ *
+ * @param pressure External altimeter pressure value.
+ * @param temperature External altimeter temperature value.
+ * @param relative External altimeter relative value.
+ * @param altitude External altitude, expected in meters.
+ */
+void MainWindow::onExternalAltimeter(
+    float pressure,
+    float temperature,
+    float relative,
+    float altitude)
+{
+    Q_UNUSED(pressure)
+    Q_UNUSED(temperature)
+    Q_UNUSED(relative)
+
+    /*
+     * Keep a GUI-thread-owned copy of the latest external altitude.
+     */
+    m_externalAltitude =
+        altitude;
+
+    /*
+     * If EXT is selected, this becomes the active altitude supplied
+     * back to the transponder subsystem.
+     */
+    if (m_altitudeSourceMode == 1)
+    {
+        emit localAltitudeChanged(
+            m_externalAltitude);
+    }
+}
+
+
+/**
+ * @brief Handle valid transponder communication activity.
+ *
+ * Changes the communication-status indicator to its healthy state and
+ * restarts the activity watchdog.
+ */
+void MainWindow::onTransponderActivity()
+{
+    replaceButtonColor(
+        ui->pushButton_14,
+        ColorStatusBad,
+        ColorStatusOk);
+
+    timerActive->start(
+        ActivityTimeoutMs);
+}
+
+
+/**
+ * @brief Handle reception of a transponder ping.
+ *
+ * Marks the ping indicator healthy and restarts its watchdog timer.
+ */
+void MainWindow::onTransponderPing()
+{
+    replaceButtonColor(
+        ui->pushButton_10,
+        ColorStatusBad,
+        ColorStatusOk);
+
+    timerPing->start(
+        PingTimeoutMs);
+}
+
+
+/**
+ * @brief Process a transponder operating-mode response.
+ *
+ * Protocol values currently interpreted:
+ * - 't' : standby.
+ * - 'a' : Mode A.
+ * - 'c' : Mode C / altitude.
+ *
+ * Only updates the button styles when the reported mode differs from the
+ * currently displayed mode.
+ *
+ * @param receivedMode Protocol mode character.
+ */
+void MainWindow::onTransponderMode(
+    char receivedMode)
+{
+    int newMode = mode;
+
+    switch (receivedMode)
+    {
+    case 't':
+        newMode = 1;
+        break;
+
+    case 'a':
+        newMode = 2;
+        break;
+
+    case 'c':
+        newMode = 3;
+        break;
+
+    default:
+        qWarning()
+            << "Unknown transponder mode:"
+            << receivedMode;
+
+        return;
+    }
+
+    /*
+     * Avoid unnecessary GUI style updates.
+     */
+    if (newMode == mode)
+        return;
+
+    setModeButtonActive(
+        ui->pushButton_stby,
+        newMode == 1);
+
+    setModeButtonActive(
+        ui->pushButton_norm,
+        newMode == 2);
+
+    setModeButtonActive(
+        ui->pushButton_alt,
+        newMode == 3);
+
+    mode = newMode;
+}
+
+
+/**
+ * @brief Process transponder annunciator state.
+ *
+ * A protocol value of 'N' is interpreted as false; all other values are
+ * currently interpreted as true.
+ *
+ * @param value Annunciator protocol character.
+ */
+void MainWindow::onTransponderAnnunciator(
+    char value)
+{
+    const bool state =
+        value != 'N';
+
+    qDebug()
+        << "Annunciator:"
+        << state;
+}
+
+
+/**
+ * @brief Process transponder IDENT state.
+ *
+ * A value of '0' means IDENT is inactive. Other values are treated as active.
+ * The IDENT button style is changed accordingly.
+ *
+ * @param value IDENT protocol character.
+ */
+void MainWindow::onTransponderIdent(
+    char value)
+{
+    const bool identActive =
+        value != '0';
+
+    if (identActive)
+    {
+        replaceButtonColor(
+            ui->pushButton_Ident,
+            ColorInactive,
+            ColorStatusBad);
+    }
+    else
+    {
+        replaceButtonColor(
+            ui->pushButton_Ident,
+            ColorStatusBad,
+            ColorInactive);
+    }
+}
+
+
+/**
+ * @brief Process a squawk-code response from the transponder.
+ *
+ * Expected response format:
+ *
+ * @code
+ * c=7000
+ * @endcode
+ *
+ * The parsed value is formatted as four digits and copied into the current[]
+ * digit array before updating the LCD.
+ *
+ * @param command Complete transponder response.
+ */
+void MainWindow::onTransponderCode(
+    const QByteArray &command)
+{
+    int number = 0;
+
+    /*
+     * Parse the numeric part of "c=XXXX".
+     */
+    if (std::sscanf(
+            command.constData(),
+            "c=%d",
+            &number) != 1)
+    {
+        qWarning()
+        << "Invalid squawk response:"
+        << command;
+
+        return;
+    }
+
+    /*
+     * Preserve leading zeroes in the displayed code.
+     */
+    const QString code =
+        QString::number(number)
+            .rightJustified(4, '0');
+
+    if (code.length() != 4)
+        return;
+
+    /*
+     * Store the individual code digits.
+     */
+    current[0] =
+        code[0].digitValue();
+
+    current[1] =
+        code[1].digitValue();
+
+    current[2] =
+        code[2].digitValue();
+
+    current[3] =
+        code[3].digitValue();
+
+    /*
+     * Update the currently active squawk display.
+     */
+    ui->lcdNumber->display(code);
+}
+
+
+/**
+ * @brief Process altitude reported by the transponder.
+ *
+ * Expected protocol examples:
+ *
+ * @code
+ * a=1234F
+ * a=375M
+ * @endcode
+ *
+ * Processing sequence:
+ * 1. Parse the received numeric altitude.
+ * 2. Normalize the transponder value to meters.
+ * 3. In AUTO mode, detect an invalid/implausible transponder altitude.
+ * 4. If necessary, switch to EXT or INT.
+ * 5. Convert the selected altitude into the user-selected display unit.
+ * 6. Round feet to 100-foot increments.
+ * 7. Update the LCD, unit label and altitude watchdog.
+ *
+ * @param command Complete altitude response.
+ */
+void MainWindow::onTransponderAltitude(
+    const QByteArray &command)
+{
+    /*
+     * Work on a local copy so the original signal argument remains unchanged.
+     */
+    QByteArray data = command;
+
+    float receivedAltitude = 0.0F;
+
+    /*
+     * Preserve the previous protocol fallback.
+     *
+     * A query-style response is converted into a one-meter value so the
+     * existing processing path can continue.
+     */
+    if (data.size() > 2 &&
+        data[2] == '?')
+    {
+        data = "a=1M";
+    }
+
+
+    /*
+     * Extract numeric altitude.
+     */
+    if (std::sscanf(
+            data.constData(),
+            "a=%f",
+            &receivedAltitude) != 1)
+    {
+        qWarning()
+        << "Invalid altitude response:"
+        << data;
+
+        return;
+    }
+
+
+    /*
+     * Determine whether the transponder value is in feet.
+     *
+     * Values without 'F' are currently treated as meters.
+     */
+    const bool reportedFeet =
+        data.contains('F');
+
+    /*
+     * Normalize all transponder altitude values to meters.
+     */
+    double altitudeMeters =
+        receivedAltitude;
+
+    if (reportedFeet)
+    {
+        altitudeMeters =
+            feetToMeters(
+                altitudeMeters);
+    }
+
+
+    /*
+     * AUTO mode:
+     *
+     * A transponder altitude below 0.1 m or above 5000 m is currently treated
+     * as unusable. When that occurs, the system first tries the external
+     * altimeter and then the internal pressure sensor.
+     */
+    if (m_altitudeSourceMode == 2 &&
+        (altitudeMeters < 0.1 ||
+         altitudeMeters > 5000.0))
+    {
+        /*
+         * First choice: external altitude sensor.
+         */
+        if (m_externalAltitude > 0.1)
+        {
+            m_altitudeSourceMode = 1;
+
+            /*
+             * Inform the communication subsystem that EXT is now active.
+             */
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
+
+            /*
+             * Configure transponder altitude-data handling.
+             */
+            mysocket->TransponderMode(false);
+
+            ui->pushButton_27->setText(
+                "EXT");
+
+            altitudeMeters =
+                m_externalAltitude;
+
+            /*
+             * Supply the external altitude to MyTcpSocket.
+             */
+            emit localAltitudeChanged(
+                altitudeMeters);
+
+            /*
+             * Orange identifies the external altitude source.
+             */
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: orange; }");
+        }
+
+        /*
+         * Second choice: internal pressure sensor.
+         */
+        else if (m_pressure_sensor &&
+                 m_internalAltitude > 0.1)
+        {
+            m_altitudeSourceMode = 3;
+
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
+
+            mysocket->TransponderMode(false);
+
+            ui->pushButton_27->setText(
+                "INT");
+
+            altitudeMeters =
+                m_internalAltitude;
+
+            emit localAltitudeChanged(
+                altitudeMeters);
+
+            /*
+             * Magenta identifies the internal pressure-sensor source.
+             */
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: #FF00FF; }");
+        }
+    }
+
+
+    QString altitudeType;
+    double displayAltitude = 0.0;
+
+
+    /*
+     * Convert normalized altitude into the selected display units.
+     */
+    if (alt_mode == 1)
+    {
+        /*
+         * Feet display.
+         */
+        displayAltitude =
+            metersToFeet(
+                altitudeMeters);
+
+        /*
+         * Display transponder altitude in 100-foot increments.
+         */
+        displayAltitude =
+            std::round(
+                displayAltitude /
+                100.0) *
+            100.0;
+
+        altitudeType =
+            "Alt.Ft.";
+    }
+    else
+    {
+        /*
+         * Meter display.
+         */
+        displayAltitude =
+            altitudeMeters;
+
+        altitudeType =
+            "Alt.M.";
+    }
+
+
+    /*
+     * Store the rounded value currently shown by the UI.
+     */
+    m_tansALT =
+        std::round(
+            displayAltitude);
+
+
+    /*
+     * Display a minimum of four digits, padding with leading zeroes.
+     */
+    const QString altitudeText =
+        QString::number(
+            static_cast<int>(
+                m_tansALT))
+            .rightJustified(4, '0');
+
+
+    /*
+     * Update altitude LCD and unit label.
+     */
+    ui->lcdNumber_3->display(
+        altitudeText);
+
+    ui->label_2->setText(
+        altitudeType);
+
+    /*
+     * Add altitude information to the short diagnostic history.
+     */
+    ui->plainTextEdit->appendPlainText(
+        "Altitude to display: " +
+        altitudeText);
+
+
+    /*
+     * Mark altitude data as alive for the watchdog.
+     *
+     * The current design considers only positive displayed altitude valid.
+     */
+    if (m_tansALT > 0)
+    {
+        alt_received = true;
+    }
+}
+
+
+/**
+ * @brief Process a text/status response from the transponder.
+ *
+ * The protocol prefix occupies the first two bytes. The remaining payload is
+ * displayed in the diagnostic text window.
+ *
+ * @param command Complete response.
+ */
+void MainWindow::onTransponderText(
+    const QByteArray &command)
+{
+    if (command.size() <= 2)
+        return;
+
+    ui->plainTextEdit->appendPlainText(
+        QString::fromLocal8Bit(
+            command.constData() + 2,
+            command.size() - 2));
+}
+
+
+/**
+ * @brief Process transponder hardware-test status.
+ *
+ * A value other than '1' is currently interpreted as a successful hardware
+ * state.
+ *
+ * The diagnostic text window is updated and the status/ping indicator is
+ * changed accordingly.
+ *
+ * @param value Hardware-test protocol value.
+ */
+void MainWindow::onTransponderHardwareStatus(
+    char value)
+{
+    const bool hardwareOk =
+        value != '1';
+
+    ui->plainTextEdit->appendPlainText(
+        tr("Hardware test status: %1")
+            .arg(hardwareOk));
+
+    if (hardwareOk)
+    {
+        /*
+         * Show healthy state and retain it for the watchdog interval.
+         */
+        replaceButtonColor(
+            ui->pushButton_10,
+            ColorStatusBad,
+            ColorStatusOk);
+
+        timerPing->start(
+            ActivityTimeoutMs);
+    }
+    else
+    {
+        /*
+         * Show failed/unhealthy state.
+         */
+        replaceButtonColor(
+            ui->pushButton_10,
+            ColorStatusOk,
+            ColorStatusBad);
+    }
+}
+
+
+/**
+ * @brief Process the transponder altitude-data mode.
+ *
+ * Currently used for diagnostic output only.
+ *
+ * @param serialMode true when the transponder reports serial altitude mode.
+ */
+void MainWindow::onTransponderDataMode(
+    bool serialMode)
+{
+    qDebug()
+    << "Transponder serial altitude mode:"
+    << serialMode;
+}
+
+
+/**
+ * @brief Handle expiration of the transponder ping watchdog.
+ *
+ * Marks the ping/status indicator as unhealthy.
+ */
 void MainWindow::reset_ping()
 {
-    qDebug() << ":::Ping timeout";
-    QString x;
-    x = ui->pushButton_10->styleSheet();
-    x.replace(QString("1 #090"), QString("1 #900"));
-    ui->pushButton_10->setStyleSheet(x);
-    ui->pushButton_10->update();
+    replaceButtonColor(
+        ui->pushButton_10,
+        ColorStatusOk,
+        ColorStatusBad);
 }
 
-// Timeout on the transponder port...
+
+/**
+ * @brief Handle expiration of the general communication watchdog.
+ *
+ * Marks the communication activity indicator as inactive/unhealthy.
+ */
 void MainWindow::active_ping()
 {
-    QString x;
-    x = ui->pushButton_14->styleSheet();
-    x.replace(QString("1 #090"), QString("1 #900"));
-    ui->pushButton_14->setStyleSheet(x);
-    ui->pushButton_14->update();
-    this->timerActive->stop();
+    replaceButtonColor(
+        ui->pushButton_14,
+        ColorStatusOk,
+        ColorStatusBad);
 }
 
+
+/**
+ * @brief Periodically verify that altitude data is still being received.
+ *
+ * If @c alt_received was set during the previous watchdog interval, the
+ * altitude status indicator is marked healthy. Otherwise it is marked bad.
+ *
+ * The flag is reset after each check and must be set again by a later
+ * altitude update.
+ */
 void MainWindow::doCheck()
 {
-    if ( alt_receiced == false)
+    if (alt_received)
     {
-        QString x = ui->pushButton_11->styleSheet();
-        x.replace(QString("1 #090"), QString("1 #900"));
-        ui->pushButton_11->setStyleSheet(x);
-        ui->pushButton_11->update();
-    }else{
-        QString x = ui->pushButton_11->styleSheet();
-        x.replace(QString("1 #900"), QString("1 #090"));
-        ui->pushButton_11->setStyleSheet(x);
-        ui->pushButton_11->update();
+        replaceButtonColor(
+            ui->pushButton_11,
+            ColorStatusBad,
+            ColorStatusOk);
     }
-    alt_receiced = false;
+    else
+    {
+        replaceButtonColor(
+            ui->pushButton_11,
+            ColorStatusOk,
+            ColorStatusBad);
+    }
+
+    alt_received = false;
 }
 
-void MainWindow::setalt(int alt_mode)
+
+/**
+ * @brief Select altitude display units.
+ *
+ * @param mode
+ *        0 = meters.
+ *        1 = feet.
+ */
+void MainWindow::setalt(
+    int mode)
 {
-    this->alt_mode = alt_mode;
-    qDebug() << "Set ALT: " << alt_mode;
+    alt_mode = mode;
+
+    qDebug()
+        << "Altitude display:"
+        << (alt_mode == 1
+                ? "feet"
+                : "meters");
 }
 
-void MainWindow::getTransponderVal() //const QByteArray &array)
+
+/**
+ * @brief Close the main application window.
+ */
+void MainWindow::accepted()
 {
-    if(this->mysocket->transponder_valid)
+    close();
+}
+
+
+/**
+ * @brief Append one digit to the pending squawk code.
+ *
+ * Transponder codes use octal digits, so only values from 0 through 7 are
+ * accepted.
+ *
+ * Existing digits are shifted one place to the left and the supplied digit
+ * becomes the least-significant digit.
+ *
+ * @param digit Digit in the range 0...7.
+ */
+void MainWindow::addnext(
+    int digit)
+{
+    if (digit < 0 ||
+        digit > 7)
     {
-        QMetaObject::invokeMethod(this, [this]() {
-            QString x = this->ui->pushButton_14->styleSheet();
-            if (x.contains("#900")) {
-                x.replace("1 #900", "1 #090");
-                this->ui->pushButton_14->setStyleSheet(x);
-                this->ui->pushButton_14->update();
-            }
-            this->timerActive->start(5000);
-        }, Qt::QueuedConnection);
-        this->mysocket->transponder_valid = false;
+        return;
     }
 
-    if(this->mysocket->transponder_ping)
-    {
-        QMetaObject::invokeMethod(this, [this]() {
-            QString x = this->ui->pushButton_10->styleSheet();
-            x.replace(QString("1 #900"), QString("1 #090"));
-            this->ui->pushButton_10->setStyleSheet(x);
-            this->ui->pushButton_10->update();
-            this->timerPing->start(10000);
-        }, Qt::QueuedConnection);
-        this->mysocket->transponder_ping = false;
-    }
+    /*
+     * Shift existing code left by one digit.
+     */
+    next[0] = next[1];
+    next[1] = next[2];
+    next[2] = next[3];
+    next[3] = digit;
 
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_s != '-')
+    /*
+     * Reconstruct the four-digit integer representation.
+     */
+    const int code =
+        next[0] * 1000 +
+        next[1] * 100 +
+        next[2] * 10 +
+        next[3];
+
+    /*
+     * Display with leading zeroes.
+     */
+    ui->lcdNumber_2->display(
+        QString::number(code)
+            .rightJustified(4, '0'));
+}
+
+
+/**
+ * @brief Send or query a transponder operating mode.
+ *
+ * Protocol commands:
+ * - 0 -> STX s=? ETX
+ * - 1 -> STX s=t ETX
+ * - 2 -> STX s=a ETX
+ * - 3 -> STX s=c ETX
+ *
+ * @param requestedMode Requested operating mode.
+ */
+void MainWindow::setmode(
+    int requestedMode)
+{
+    if (!mysocket)
+        return;
+
+    switch (requestedMode)
     {
-        auto setButtonActive = [](QPushButton *button, bool active)
+    case 0:
+        mysocket->readyWrite(
+            QByteArray(
+                "\x02s=?\x03",
+                5));
+        break;
+
+    case 1:
+        mysocket->readyWrite(
+            QByteArray(
+                "\x02s=t\x03",
+                5));
+        break;
+
+    case 2:
+        mysocket->readyWrite(
+            QByteArray(
+                "\x02s=a\x03",
+                5));
+        break;
+
+    case 3:
+        mysocket->readyWrite(
+            QByteArray(
+                "\x02s=c\x03",
+                5));
+        break;
+
+    default:
+        qWarning()
+            << "Invalid transponder mode:"
+            << requestedMode;
+        break;
+    }
+}
+
+
+// ============================================================================
+// Squawk keypad
+// ============================================================================
+
+/**
+ * @brief Append digit 1 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_clicked()
+{
+    addnext(1);
+}
+
+/**
+ * @brief Append digit 2 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_2_clicked()
+{
+    addnext(2);
+}
+
+/**
+ * @brief Append digit 3 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_3_clicked()
+{
+    addnext(3);
+}
+
+/**
+ * @brief Append digit 4 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_4_clicked()
+{
+    addnext(4);
+}
+
+/**
+ * @brief Append digit 5 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_5_clicked()
+{
+    addnext(5);
+}
+
+/**
+ * @brief Append digit 6 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_6_clicked()
+{
+    addnext(6);
+}
+
+/**
+ * @brief Append digit 7 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_7_clicked()
+{
+    addnext(7);
+}
+
+/**
+ * @brief Digit 8 handler.
+ *
+ * Intentionally performs no action because transponder squawk codes are
+ * octal and cannot contain 8.
+ */
+void MainWindow::on_pushButton_8_clicked()
+{
+}
+
+/**
+ * @brief Digit 9 handler.
+ *
+ * Intentionally performs no action because transponder squawk codes are
+ * octal and cannot contain 9.
+ */
+void MainWindow::on_pushButton_9_clicked()
+{
+}
+
+/**
+ * @brief Append digit 0 to the pending squawk code.
+ */
+void MainWindow::on_pushButton_17_clicked()
+{
+    addnext(0);
+}
+
+
+// ============================================================================
+// Window controls
+// ============================================================================
+
+/**
+ * @brief Close the main window.
+ */
+void MainWindow::on_exit_2_clicked()
+{
+    close();
+}
+
+/**
+ * @brief Close the main window using the alternate exit control.
+ */
+void MainWindow::on_pushButton_19_clicked()
+{
+    close();
+}
+
+
+/**
+ * @brief Program the pending squawk code into the transponder.
+ *
+ * Copies next[] into current[], constructs a framed c=XXXX command and sends
+ * it through MyTcpSocket.
+ */
+void MainWindow::on_pushButton_16_clicked()
+{
+    /*
+     * Copy the selected code into the current-code array.
+     */
+    current[0] = next[0];
+    current[1] = next[1];
+    current[2] = next[2];
+    current[3] = next[3];
+
+    /*
+     * Reconstruct the numeric squawk code.
+     */
+    const int code =
+        next[0] * 1000 +
+        next[1] * 100 +
+        next[2] * 10 +
+        next[3];
+
+    /*
+     * Build:
+     *
+     * STX c=XXXX ETX
+     */
+    QByteArray command =
+        QByteArray("\x02" "c=", 3) +
+        QByteArray::number(code) +
+        QByteArray(1, '\x03');
+
+    qDebug()
+        << "Set squawk:"
+        << code;
+
+    mysocket->readyWrite(
+        command);
+}
+
+
+/**
+ * @brief Set and transmit squawk code 7000.
+ *
+ * Sets the pending code to 7000, updates the LCD and immediately sends the
+ * corresponding framed transponder command.
+ */
+void MainWindow::on_pushButton_18_clicked()
+{
+    next[0] = 7;
+    next[1] = 0;
+    next[2] = 0;
+    next[3] = 0;
+
+    ui->lcdNumber_2->display(
+        "7000");
+
+    mysocket->readyWrite(
+        QByteArray(
+            "\x02c=7000\x03",
+            8));
+}
+
+
+/**
+ * @brief Activate transponder IDENT.
+ *
+ * Sends:
+ *
+ * @code
+ * STX i=s ETX
+ * @endcode
+ */
+void MainWindow::on_pushButton_Ident_clicked()
+{
+    mysocket->readyWrite(
+        QByteArray(
+            "\x02i=s\x03",
+            5));
+}
+
+
+/**
+ * @brief Cycle between available altitude sources.
+ *
+ * Source sequence:
+ *
+ * @code
+ * TRA -> EXT -> INT -> AUTO -> TRA
+ * @endcode
+ *
+ * Source meaning:
+ * - TRA  : altitude supplied by the transponder.
+ * - EXT  : external serial/network altimeter.
+ * - INT  : platform internal pressure sensor.
+ * - AUTO : use transponder altitude unless it becomes invalid, then fall
+ *          back to EXT and finally INT.
+ *
+ * Display colors currently used:
+ * - EXT : orange.
+ * - INT : magenta.
+ * - unavailable requested source : red.
+ * - TRA/AUTO : cyan.
+ */
+void MainWindow::on_pushButton_27_clicked()
+{
+    const QString currentSource =
+        ui->pushButton_27->text();
+
+
+    // ---------------------------------------------------------------------
+    // TRA -> EXT
+    // ---------------------------------------------------------------------
+
+    if (currentSource == "TRA")
+    {
+        /*
+         * Advance button state to EXT.
+         */
+        ui->pushButton_27->setText(
+            "EXT");
+
+        /*
+         * External altitude is available.
+         */
+        if (m_externalAltitude > 0.1)
         {
-            QString style = button->styleSheet();
-            //                                qDebug() << style;
+            m_altitudeSourceMode = 1;
 
-            if (active) {
-                // Only change if it is currently inactive
-                if (style.contains("1 #888")) {
-                    style.replace("1 #888", "1 #2A0");
-                    button->setStyleSheet(style);
-                    button->update();
-                    QThread::msleep(100);
-                }else{
+            /*
+             * Inform MyTcpSocket of the selected source.
+             */
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
 
-                }
-            } else {
-                // Only change if it is currently active
-                if (style.contains("1 #2A0")) {
-                    style.replace("1 #2A0", "1 #888");
-                    button->setStyleSheet(style);
-                    button->update();
-                    QThread::msleep(100);
-                }
-            }
-        };
+            /*
+             * Supply the latest external altitude.
+             */
+            emit localAltitudeChanged(
+                m_externalAltitude);
 
-        int newMode = this->mode;
+            /*
+             * Configure the transponder for externally supplied altitude.
+             */
+            mysocket->TransponderMode(
+                false);
 
-        switch (this->mysocket->transponder_command_s )
-        {
-        case 't':   newMode = 1;    break;
-        case 'a':   newMode = 2;    break;
-        case 'c':   newMode = 3;    break;
-        default:                    break;
-        }
-
-        // Only do anything if the mode actually changed
-        if (newMode != this->mode){
-            setButtonActive(this->ui->pushButton_stby, newMode == 1);
-            setButtonActive(this->ui->pushButton_norm, newMode == 2);
-            setButtonActive(this->ui->pushButton_alt,  newMode == 3);
-            this->mode = newMode;
-        }
-        this->mysocket->transponder_command_s = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_r != '-')
-    {
-        bool state=true;
-        if (this->mysocket->transponder_command_r  == 'N') state = false;
-        QString x = tr("Annunciator %1").arg(state);
-        this->mysocket->transponder_command_r = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_i != '-')
-    {
-        bool state;
-        if (this->mysocket->transponder_command_i  == '0') state = false;
-        else state = true;
-
-        QString x = this->ui->pushButton_Ident->styleSheet();
-
-        if ( state == false)
-        {
-            x.replace(QString("1 #900"), QString("1 #888"));
-        }else{
-            x.replace(QString("1 #888"), QString("1 #900"));
-        }
-        this->ui->pushButton_Ident->setStyleSheet(x);
-        this->ui->pushButton_Ident->update();
-
-        this->mysocket->transponder_command_i = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_c[0] != '-')
-    {
-        int number;
-        char numout[5];
-        sscanf(this->mysocket->transponder_command_c,"c=%d",&number);
-        snprintf(numout,5,"%.4d",number);
-
-        this->current[3]=numout[3]-0x30;
-        this->current[2]=numout[2]-0x30;
-        this->current[1]=numout[1]-0x30;
-        this->current[0]=numout[0]-0x30;
-
-        this->ui->lcdNumber->display(QString::number( this->current[0]*1000+
-                                                     this->current[1]*100+
-                                                     this->current[2]*10+
-                                                     this->current[3]).rightJustified(4, '0'));
-        this->ui->lcdNumber->update();
-        this->mysocket->transponder_command_c[0] = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_a[0] != '-')
-    {
-        float number = 0.0;
-        float meters = 0.0;
-        char numout[20] = {0};
-        QString altType;
-
-        if(this->mysocket->transponder_command_a[2] == '?'){
-            this->mysocket->transponder_command_a[2] = '1';
-            this->mysocket->transponder_command_a[3] = 'M';
-            this->mysocket->transponder_command_a[4] = 0;
-        }
-        sscanf(this->mysocket->transponder_command_a, "a=%f", &number);
-        const bool reportedMeters = strchr(this->mysocket->transponder_command_a, 'M');
-        const bool reportedFeet = strchr(this->mysocket->transponder_command_a, 'F');
-
-        // First convert reported altitude to meters
-        meters = number;
-        if (reportedFeet) meters /= 3.2808399;
-
-        // Then convert to selected display unit
-        if (this->alt_mode == 1)   // Feet
-        {
-            number = meters * 3.2808399;
-            number = std::round(number / 100.0) * 100.0;
-            altType = "Alt.Ft.";
-        }
-        else                       // Meters
-        {
-            number = meters;
-            altType = "Alt.M.";
-        }
-
-        this->m_tansALT = std::round(number);
-
-        // If we are in AUTO mode, and the internal altimeter reports 0, then switch to the external if it exists...
-        if( (meters < 0.1 || meters > 5000 ) &&
-          this->mysocket->Transponder_altitude_mode == 2 &&
-          this->mysocket->m_altitude > 0)
-        {
-            // If we got an external sensor...
-            if(mysocket->Altimeter_data.altitude > 0.1){
-                mysocket->TransponderMode(false);
-                mysocket->Transponder_altitude_mode = 1;
-                ui->pushButton_27->setText("EXT");
-            }
-            else if(m_pressure_sensor != nullptr){
-                mysocket->TransponderMode(false);
-                mysocket->Transponder_altitude_mode = 3;
-                ui->pushButton_27->setText("INT");
-            }
-
-            this->m_tansALT = this->mysocket->m_altitude ;
-            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
-
-        }
-        snprintf(numout,20,"%.4d",(int)this->m_tansALT);
-        this->ui->lcdNumber_3->display(numout);
-        this->ui->lcdNumber_3->update();
-        this->ui->plainTextEdit->appendPlainText(QString("Altitude to display: ") + numout);
-        this->ui->label_2->setText(altType);
-        this->ui->label_2->update();
-//      this->ui->baro_alt->setText(numout);
-
-        // We assume that altitude never will is zero, this might not hold,
-        // but there has been some issues with the altitude encoder so we do this any how...
-        if((int)this->m_tansALT > 0)
-            this->alt_receiced = true;
-
-        this->mysocket->transponder_command_a[0] = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_z[0] != '-')
-    {
-//        qDebug() << "T: %s\r\n" << &this->mysocket->transponder_command_z[2];
-        this->ui->plainTextEdit->appendPlainText(&this->mysocket->transponder_command_z[2]);
-        this->ui->plainTextEdit->update();
-        this->mysocket->transponder_command_z[0] = '-';
-    }
-
-    /// ----------------------------------------------------
-    if(this->mysocket->transponder_command_p != '-')
-    {
-//        qDebug() << "P: %c\r\n" << &this->mysocket->transponder_command_p;
-
-        bool state=true;
-        if (this->mysocket->transponder_command_p == '1') state = false;
-
-        QString x = tr("Hardware test status: %1").arg(state);
-        this->ui->plainTextEdit->appendPlainText(x);
-        this->ui->plainTextEdit->update();
-
-        // ...
-        if(state == true)
-        {
-            x = this->ui->pushButton_10->styleSheet();
-            x.replace(QString("1 #900"), QString("1 #090"));
-            this->ui->pushButton_10->setStyleSheet(x);
-            this->ui->pushButton_10->update();
-            this->timerPing->stop();
-            this->timerPing->start(5000); // Turn off in 5 sec...
+            /*
+             * Orange identifies the external sensor.
+             */
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: orange; }");
         }
         else
         {
-            x = this->ui->pushButton_10->styleSheet();
-            x.replace(QString("1 #090"), QString("1 #900"));
-            this->ui->pushButton_10->setStyleSheet(x);
-            this->ui->pushButton_10->update();
+            /*
+             * EXT requested but no usable external altitude currently exists.
+             * Retain transponder altitude internally and indicate the
+             * unavailable selection in red.
+             */
+            m_altitudeSourceMode = 0;
+
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
+
+            mysocket->TransponderMode(
+                true);
+
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: red; }");
         }
 
-        this->mysocket->transponder_command_p = '-';
+        return;
     }
-//    QCoreApplication::processEvents();
-}
 
-void MainWindow::accepted(void)
-{
-    qApp->closeAllWindows();
-    qApp->exit();
-    QCoreApplication::quit();
-    this->close();
-}
 
-void MainWindow::addnext(int x)
-{
-    this->next[0]=this->next[1];
-    this->next[1]=this->next[2];
-    this->next[2]=this->next[3];
-    this->next[3]=x;
+    // ---------------------------------------------------------------------
+    // EXT -> INT
+    // ---------------------------------------------------------------------
 
-    QString num = QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]).rightJustified(4, '0');
-    ui->lcdNumber_2->display( num);
-}
-
-void MainWindow::setmode(int m)
-{
-    if(mysocket != NULL)
+    if (currentSource == "EXT")
     {
-        switch(m){
-        case 0: mysocket->readyWrite((char*)"\x02" "s=?" "\x03"); break;
-        case 1: mysocket->readyWrite((char*)"\x02" "s=t" "\x03"); break;
-        case 2: mysocket->readyWrite((char*)"\x02" "s=a" "\x03"); break;
-        case 3: mysocket->readyWrite((char*)"\x02" "s=c" "\x03"); break;
+        /*
+         * Advance button state to INT.
+         */
+        ui->pushButton_27->setText(
+            "INT");
+
+        /*
+         * Use internal pressure sensor when available.
+         */
+        if (m_pressure_sensor)
+        {
+            m_altitudeSourceMode = 3;
+
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
+
+            /*
+             * Send the latest pressure-derived altitude.
+             */
+            emit localAltitudeChanged(
+                m_internalAltitude);
+
+            mysocket->TransponderMode(
+                false);
+
+            /*
+             * Magenta identifies the internal sensor.
+             */
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: #FF00FF; }");
         }
+        else
+        {
+            /*
+             * No internal pressure sensor is available.
+             */
+            m_altitudeSourceMode = 0;
+
+            emit transponderAltitudeModeChanged(
+                m_altitudeSourceMode);
+
+            mysocket->TransponderMode(
+                true);
+
+            ui->lcdNumber_3->setStyleSheet(
+                "QLCDNumber { color: red; }");
+        }
+
+        return;
     }
-   // mode = m;
+
+
+    // ---------------------------------------------------------------------
+    // INT -> AUTO
+    // ---------------------------------------------------------------------
+
+    if (currentSource == "INT")
+    {
+        /*
+         * Enable automatic source handling.
+         */
+        m_altitudeSourceMode = 2;
+
+        emit transponderAltitudeModeChanged(
+            m_altitudeSourceMode);
+
+        mysocket->TransponderMode(
+            true);
+
+        ui->pushButton_27->setText(
+            "AUTO");
+
+        /*
+         * Cyan identifies normal transponder/AUTO operation.
+         */
+        ui->lcdNumber_3->setStyleSheet(
+            "QLCDNumber { color: rgb(13, 255, 252); }");
+
+        return;
+    }
+
+
+    // ---------------------------------------------------------------------
+    // AUTO -> TRA
+    // ---------------------------------------------------------------------
+
+    /*
+     * Any remaining state returns to normal transponder altitude.
+     */
+    m_altitudeSourceMode = 0;
+
+    emit transponderAltitudeModeChanged(
+        m_altitudeSourceMode);
+
+    mysocket->TransponderMode(
+        true);
+
+    ui->pushButton_27->setText(
+        "TRA");
+
+    ui->lcdNumber_3->setStyleSheet(
+        "QLCDNumber { color: rgb(13, 255, 252); }");
 }
 
-void MainWindow::on_pushButton_clicked(  ){addnext(1);}
-void MainWindow::on_pushButton_2_clicked(){addnext(2);}
-void MainWindow::on_pushButton_3_clicked(){addnext(3);}
-void MainWindow::on_pushButton_4_clicked(){addnext(4);}
-void MainWindow::on_pushButton_5_clicked(){addnext(5);}
-void MainWindow::on_pushButton_6_clicked(){addnext(6);}
-void MainWindow::on_pushButton_7_clicked(){addnext(7);}
-void MainWindow::on_pushButton_8_clicked(){};//addnext(8);}
-void MainWindow::on_pushButton_9_clicked(){};//addnext(9);}
-void MainWindow::on_pushButton_17_clicked(){addnext(0);}
 
-void MainWindow::on_exit_2_clicked(){           this->close();  }
-void MainWindow::on_pushButton_19_clicked(){    this->close();  }
+// ============================================================================
+// Transponder mode buttons
+// ============================================================================
 
-void MainWindow::on_pushButton_16_clicked()
+/**
+ * @brief Request transponder standby mode.
+ */
+void MainWindow::on_pushButton_stby_clicked()
 {
-    this->current[3]=this->next[3];
-    this->current[2]=this->next[2];
-    this->current[1]=this->next[1];
-    this->current[0]=this->next[0];
-
-    char data[100];
-    snprintf(data,100,"\x02" "c=%d" "\x03",this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]);
-    //    QString num = QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]);
-    //    QString msg = QString("c=%1\r\n").arg(num);
-    qDebug() << data;
-
-    mysocket->readyWrite(data);
+    setmode(1);
 }
 
-void MainWindow::on_pushButton_18_clicked()
+/**
+ * @brief Request Mode A operation.
+ */
+void MainWindow::on_pushButton_norm_clicked()
 {
-    this->next[3]=0;
-    this->next[2]=0;
-    this->next[1]=0;
-    this->next[0]=7;
-
-    QString num = QString::number(this->next[0]*1000+this->next[1]*100+this->next[2]*10+this->next[3]).rightJustified(4, '0');
-    ui->lcdNumber_2->display( num);
-
-    char data[100];
-    snprintf(data,100,"\x02" "c=%d" "\x03",7000);
-    qDebug() << data;
-
-    mysocket->readyWrite(data);
+    setmode(2);
 }
 
-
-void MainWindow::on_pushButton_Ident_clicked()
+/**
+ * @brief Request Mode C / altitude operation.
+ */
+void MainWindow::on_pushButton_alt_clicked()
 {
-    mysocket->readyWrite((char*)"\x02" "i=s" "\x03");
+    setmode(3);
 }
 
-void MainWindow::on_pushButton_27_clicked()
+
+// ============================================================================
+// Altitude display units
+// ============================================================================
+
+/**
+ * @brief Select altitude display in meters.
+ */
+void MainWindow::on_pushButton_12_clicked()
 {
+    setalt(0);
+}
 
-    QString text = ui->pushButton_27->text();
-    if(text == "TRA"){
-        ui->pushButton_27->setText("EXT");
-        qDebug() << "Alt Mode: " << "EXT";
-
-        // If we have received something from the external sensor...
-        if(mysocket->Altimeter_data.altitude > 0.1){
-            mysocket->Transponder_altitude_mode = 1;
-            mysocket->TransponderMode(false);
-            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
-        }
-        // If we got no external sensor...
-        else{
-            mysocket->Transponder_altitude_mode = 0;
-            mysocket->TransponderMode(true);
-            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: red; }");
-
-        }
-    }
-    else if(text == "EXT"){
-        ui->pushButton_27->setText("INT");
-        qDebug() << "Alt Mode: " << "INT";
-        if(m_pressure_sensor != nullptr){
-            mysocket->Transponder_altitude_mode = 3;
-            mysocket->TransponderMode(false);
-            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: #FF00FF; }");
-        }
-        else{
-            mysocket->Transponder_altitude_mode = 0;
-            mysocket->TransponderMode(true);
-            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: red; }");
-        }
-    }
-
-    else if(text == "INT"){
-        ui->pushButton_27->setText("AUTO");
-        qDebug() << "Alt Mode: " << "AUTO";
-
-        if(mysocket->Altimeter_data.altitude > 0.1 || m_pressure_sensor != nullptr){
-            mysocket->Transponder_altitude_mode = 2;
-            mysocket->TransponderMode(true);
-        }
-        else{
-            mysocket->Transponder_altitude_mode = 0;
-            mysocket->TransponderMode(true);
-        }
-        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
-    }
-    else if(text == "AUTO"){
-        ui->pushButton_27->setText("TRA");
-        qDebug() << "Alt Mode: " << "TRA";
-        mysocket->Transponder_altitude_mode = 0;
-        mysocket->TransponderMode(true);
-        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
-    }
-    else{
-        text = "TRA";
-        qDebug() << "Alt Mode: " << "TRA";
-        mysocket->Transponder_altitude_mode = 0;
-        qDebug() << "This should not happen... #001";
-        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
-    }
-/*
-
-    dTODO set Serial mode on Transponder, if connected,
-        and start transmitting altitude from the local sensor...
-*/
-//    this->alt_mode = alt_mode;
+/**
+ * @brief Select altitude display in feet.
+ */
+void MainWindow::on_pushButton_13_clicked()
+{
+    setalt(1);
 }
 
 
-// Set mode...
-void MainWindow::on_pushButton_stby_clicked(){setmode(1);}
-void MainWindow::on_pushButton_norm_clicked(){setmode(2);}
-void MainWindow::on_pushButton_alt_clicked(){setmode(3);}
-
-void MainWindow::on_pushButton_12_clicked(){setalt(0);}
-void MainWindow::on_pushButton_13_clicked(){setalt(1);}
-
-void MainWindow::on_pushButton_off_clicked(){
-    mysocket->readyWrite((char*)"\x02" "p=?" "\x03");
+/**
+ * @brief Request transponder hardware-test status.
+ *
+ * Sends:
+ *
+ * @code
+ * STX p=? ETX
+ * @endcode
+ */
+void MainWindow::on_pushButton_off_clicked()
+{
+    mysocket->readyWrite(
+        QByteArray(
+            "\x02p=?\x03",
+            5));
 }
 
-//-------------------------------------------------------------
-//-------------------------------------------------------------
 
+/**
+ * @brief Recreate the communication subsystem.
+ *
+ * Deletes the existing MyTcpSocket object, creates a replacement and then
+ * reconnects all signal/slot paths used by MainWindow.
+ *
+ * This provides a manual recovery path when the communication backend needs
+ * to be reinitialized.
+ */
 void MainWindow::on_reconnect_now_clicked()
 {
-    delete(mysocket);
-    mysocket = new MyTcpSocket(this, ui->plainTextEdit);
-}
+    delete mysocket;
 
+    mysocket =
+        new MyTcpSocket(
+            this,
+            ui->plainTextEdit);
+
+    /*
+     * The new object has no connections inherited from the deleted instance,
+     * so reconnect all communication signals.
+     */
+    connectTransponderSignals();
+}
