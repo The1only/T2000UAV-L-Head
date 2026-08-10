@@ -215,7 +215,7 @@ public:
      *
      * @param data Null-terminated C string.
      */
-    void readyWrite(char *data);
+    void readyWrite(const QByteArray &data);
 
     /**
      * @brief Initiate TCP/UDP connection if used (currently unused/stub).

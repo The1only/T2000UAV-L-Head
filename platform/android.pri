@@ -24,30 +24,12 @@ android {
     ANDROID_PACKAGE_SOURCE_DIR = $$PWD/../android
     RESOURCES += android/AndroidManifest.xml
 
-    # for deployment: include .so into APK
-    ANDROID_EXTRA_LIBS += $$PWD/../GeographicLib/build-arm64/install/lib/libGeographicLib.so
-    # link path for qmake when building
-    LIBS += -L$$PWD/../GeographicLib/build-arm64/install/lib -lGeographicLib
-    INCLUDEPATH += $$PWD/../GeographicLib/build-arm64/install/include
-
-    DEFINES += USE_GEOGRAPHICLIB
-
     SOURCES += \
         ./Source/generic/main.cpp \
         ./Source/generic/mainwindow.cpp \
         ./Source/generic/mytcpsocket.cpp \
-        ./Source/generic/ssdp.cpp\
         ./Source/generic/lockhelper.cpp \
-        ./Source/generic/tcpclient.cpp \
-        ./Source/driver/rotation_matrix.cpp \
-        ./Source/driver/gpx_parse.cpp \
-        ./Source/driver/mqttclient.cpp \
         ./Source/driver/serialport_android.cpp \
-        ./Source/generic/ins_driver.cpp \
-        ./Source/driver/wit_c_sdk.c \
-        ./Source/driver/geoid_helper.cpp \
-        ./EKF_IMU_GPS/ekf_nav_ins/src/ekfNavINS.cpp \
-        ./Source/driver/bleuart.cpp \
         ./Source/driver/sharedstorage.cpp \
 
 #       ./Source/generic/multicastlistner.cpp \
@@ -58,16 +40,7 @@ android {
         ./Header/generic/mytcpsocket.h \
         ./Header/generic/lockhelper.h \
         ./Header/generic/reg.h \
-        ./Header/generic/ssdp.h\
-        ./Header/generic/tcpclient.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS.h \
-        ./EKF_IMU_GPS/ekf_nav_ins/inc/ekfNavINS_quart.h \
-        ./Header/driver/rotation_matrix.h \
-        ./Header/driver/gpx_parse.h \
-        ./Header/driver/mqttclient.h \
         ./Header/driver/serialport.h \
-        ./Header/driver/geoid_helper.h \
-       ./Header/driver/bleuart.h \
        ./Header/driver/sharedstorage.h \
 
 
@@ -77,7 +50,7 @@ android {
     # Paho for Android (your original paths)
     PAHO_ROOT = /Users/terjenilsen/Dropbox/Sportsfly/transponder/third_party/paho/$$ANDROID_TARGET_ARCH
     INCLUDEPATH += $$PAHO_ROOT/include
-    LIBS += -L$$PAHO_ROOT/lib -lpaho-mqttpp3 -lpaho-mqtt3a
+    LIBS += -L$$PAHO_ROOT/lib
 
     # Helpful for static libs:
     QMAKE_CXXFLAGS += -fPIC

@@ -603,11 +603,6 @@ void MyTcpSocket::doTransponder()
         {
             char x[64];
 
-            if(m_altitude > 160 || m_altitude < 140){
-                qDebug() << m_altitude;
-            }
-
-
             snprintf(x, sizeof(x), "\x02" "a=%dM" "\x03", static_cast<int>(m_altitude));  // feet -> meters
             readyWrite(x);
            // qDebug() << m_altitude;
@@ -668,9 +663,8 @@ void MyTcpSocket::parseAltimeterLine(MyTcpSocket *thiz, const QString &line)
     float altitude = parts[4].toFloat(&ok4);
     if (ok4 && !std::isnan(altitude)) {
         thiz->Altimeter_data.altitude = altitude;
-        thiz->m_altitude = altitude;
-        if(altitude > 160 || altitude < 140){
-            qDebug() << altitude;
+        if(thiz->Transponder_altitude_mode == 1){
+            thiz->m_altitude = altitude;
         }
     }
 
@@ -801,21 +795,52 @@ void MyTcpSocket::ret_transponder(void *parent, const char *data, uint32_t lengt
  *
  * @param data  Null-terminated C string (command).
  */
-void MyTcpSocket::readyWrite(char *data)
+void MyTcpSocket::readyWrite(const QByteArray &data)
 {
-    if (Transponderstat) {
-        if(m_transponderClient != nullptr){
-            if (m_transponderClient->state() == QAbstractSocket::ConnectedState) {
-                m_transponderClient->write(data);
-            }
-            else{
-                qDebug() << "Error NOT connectd!!!" << data;
+    // If called from another thread, queue it to this object's thread.
+    if (QThread::currentThread() != this->thread())
+    {
+        QMetaObject::invokeMethod(
+            this,
+            [this, data]()
+            {
+                readyWrite(data);
+            },
+            Qt::QueuedConnection
+            );
+
+        return;
+    }
+
+    // From here down we are running in MyTcpSocket's thread.
+    if (!Transponderstat)
+        return;
+
+    if (m_transponderClient != nullptr)
+    {
+        if (m_transponderClient->state() == QAbstractSocket::ConnectedState)
+        {
+            const qint64 bytes = m_transponderClient->write(data);
+            if (bytes == -1)
+            {
+                qWarning()
+                << "Transponder TCP write failed:"
+                << m_transponderClient->errorString();
             }
         }
-        else{
-#ifndef Q_OS_IOS
-            TransponderSerPort->send(data);
-#endif
+        else
+        {
+            qWarning() << "Transponder TCP not connected:" << data;
         }
     }
+    else
+    {
+#ifndef Q_OS_IOS
+        if (TransponderSerPort != nullptr)
+        {
+            TransponderSerPort->send(data);
+        }
+#endif
+    }
 }
+

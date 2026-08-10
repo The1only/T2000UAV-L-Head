@@ -125,24 +125,11 @@ qDebug() << "Android logs will be stored in:"
     this->mysocket = new MyTcpSocket(this, ui->plainTextEdit);
 
     // ------------------------------
+    // Set STBY mode on transponder...
     setmode(1);
-    m_timer.start();
+//    m_timer.start();
 
-    qDebug() << "  timerPing  ";
-    timerPing = new QTimer(this);
-    timerPing->setSingleShot(true);
-    connect(timerPing, SIGNAL(timeout()), this, SLOT(reset_ping()));
-
-    qDebug() << "  timerActive ";
-    timerActive = new QTimer(this);
-    timerActive->setSingleShot(true);
-    connect(timerActive, SIGNAL(timeout()), this, SLOT(active_ping()));
-
-    qDebug() << "  timerAlt  ";
-    timerAlt = new QTimer(this);
-    timerAlt->setSingleShot(false);
-    connect(timerAlt, SIGNAL(timeout()), this, SLOT(doCheck()));
-    timerAlt->start(5000);
+    init();
 
     QString data = "System booted at: "+QDateTime::currentDateTime().toString();
 
@@ -211,38 +198,64 @@ void MainWindow::permissionUpdated(const QPermission &permission)
     qDebug() << "Precise location OK";
 }
 
+// Call back funtion from the sensor handler...
 void MainWindow::init()
 {
-#if QT_CONFIG(permissions)
-    // camera
-    QCameraPermission cameraPermission;
-    switch (qApp->checkPermission(cameraPermission))
+    QList<QSensor*> mySensorList;
+
+    for (const QByteArray &type : QSensor::sensorTypes())
     {
-        case Qt::PermissionStatus::Undetermined:
-            qApp->requestPermission(cameraPermission, this, &MainWindow::init);
-            return;
-        case Qt::PermissionStatus::Denied:
-            qWarning("Camera permission is not granted!");
-            return;
-        case Qt::PermissionStatus::Granted:
-            break;
+        qDebug() << "Found a sensor type:" << type;
+
+        for (const QByteArray &identifier : QSensor::sensorsForType(type))
+        {
+            qDebug() << "    " << "Found a sensor of that type:" << identifier;
+            QSensor* sensor = new QSensor(type, this);
+            sensor->setIdentifier(identifier);
+            mySensorList.append(sensor);
+        }
+
+        if(!strncmp(type,"QPressureSensor",strlen("QPressureSensor")))
+        {
+            this->m_pressure_sensor = new QPressureSensor();
+            connect(this->m_pressure_sensor, SIGNAL(readingChanged()), this, SLOT(onPressureReadingChanged()));
+            this->m_pressure_sensor->start();
+            this->m_pressure_sensor->setDataRate(4);
+            qDebug() << "Found a sensor QPressureSensor";
+        }
     }
 
-    QLocationPermission locationPermission;
-    locationPermission.setAccuracy(QLocationPermission::Precise);
-    qApp->requestPermission(locationPermission, this, &MainWindow::permissionUpdated);
+    qDebug() << mySensorList;
 
-#endif
+    qDebug() << "  timerPing  ";
+    timerPing = new QTimer(this);
+    timerPing->setSingleShot(true);
+    connect(timerPing, SIGNAL(timeout()), this, SLOT(reset_ping()));
 
+    qDebug() << "  timerActive ";
+    timerActive = new QTimer(this);
+    timerActive->setSingleShot(true);
+    connect(timerActive, SIGNAL(timeout()), this, SLOT(active_ping()));
+
+    qDebug() << "  timerAlt  ";
+    timerAlt = new QTimer(this);
+    timerAlt->setSingleShot(false);
+    connect(timerAlt, SIGNAL(timeout()), this, SLOT(doCheck()));
+    timerAlt->start(5000);
+
+    QCoreApplication::processEvents();
 }
 
 void MainWindow::onPressureReadingChanged()
 {
-    if(m_pressure_sensor != nullptr){
+    if(m_pressure_sensor != nullptr && mysocket->Transponder_altitude_mode == 3){
         m_pressure_reader = m_pressure_sensor->reading();
-        this->mysocket->m_pressure_raw = m_pressure_reader->pressure()/100.0;
-    }else{
-        this->mysocket->m_pressure_raw = m_pressure_reader->pressure()/100.0;
+        float m_pressure_raw =  m_pressure_reader->pressure()/100.0;
+        // Meters...
+        this->mysocket->m_altitude = 44330.0 * (1.0 - std::pow(m_pressure_raw / 1013.25, 0.190284));
+        // feet...
+       // this->mysocket->m_preasure_alt = 145366.45 * (1.0 - std::pow(m_pressure_raw / 1013.25, 0.190284));
+
     }
 }
 
@@ -424,60 +437,52 @@ void MainWindow::getTransponderVal() //const QByteArray &array)
         float number = 0.0;
         float meters = 0.0;
         char numout[20] = {0};
+        QString altType;
+
         if(this->mysocket->transponder_command_a[2] == '?'){
             this->mysocket->transponder_command_a[2] = '1';
             this->mysocket->transponder_command_a[3] = 'M';
             this->mysocket->transponder_command_a[4] = 0;
         }
-        sscanf(this->mysocket->transponder_command_a,"a=%f",&number);
-        QString altType="Alt.Ft.";
+        sscanf(this->mysocket->transponder_command_a, "a=%f", &number);
+        const bool reportedMeters = strchr(this->mysocket->transponder_command_a, 'M');
+        const bool reportedFeet = strchr(this->mysocket->transponder_command_a, 'F');
+
+        // First convert reported altitude to meters
         meters = number;
+        if (reportedFeet) meters /= 3.2808399;
 
-        // If we are to use feet...
-        if(this->alt_mode == 1)
+        // Then convert to selected display unit
+        if (this->alt_mode == 1)   // Feet
         {
-            for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
-            {
-                // If meter is reported...
-                if(this->mysocket->transponder_command_a[key]=='M')
-                {
-                    number*=3.2808399;
-                    break;
-                }
-                else{
-                    meters = number/3.2808399;
-                }
-            }
-            this->m_tansALT = std::ceil(number / 100.0) * 100.0;
+            number = meters * 3.2808399;
+            number = std::round(number / 100.0) * 100.0;
+            altType = "Alt.Ft.";
         }
-        // If we are to use meter...
-        else{
-            for (unsigned long key=0; key < strlen(this->mysocket->transponder_command_a); key++)
-            {
-                // IF feet is reported...
-                if(this->mysocket->transponder_command_a[key]=='F')
-                {
-                    number/=3.2808399;
-                    meters = number;
-                    break;
-                }
-            }
-            this->m_tansALT = round(number);
-            altType="Alt.M.";
+        else                       // Meters
+        {
+            number = meters;
+            altType = "Alt.M.";
         }
+
+        this->m_tansALT = std::round(number);
+
         // If we are in AUTO mode, and the internal altimeter reports 0, then switch to the external if it exists...
-
-        if(meters > 160 || meters < 140){
-            qDebug() << meters;
-        }
-
         if( (meters < 0.1 || meters > 5000 ) &&
           this->mysocket->Transponder_altitude_mode == 2 &&
           this->mysocket->m_altitude > 0)
         {
-            mysocket->TransponderMode(false);
-            mysocket->Transponder_altitude_mode = 1;
-            ui->pushButton_27->setText("EXT");
+            // If we got an external sensor...
+            if(mysocket->Altimeter_data.altitude > 0.1){
+                mysocket->TransponderMode(false);
+                mysocket->Transponder_altitude_mode = 1;
+                ui->pushButton_27->setText("EXT");
+            }
+            else if(m_pressure_sensor != nullptr){
+                mysocket->TransponderMode(false);
+                mysocket->Transponder_altitude_mode = 3;
+                ui->pushButton_27->setText("INT");
+            }
 
             this->m_tansALT = this->mysocket->m_altitude ;
             this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
@@ -637,36 +642,61 @@ void MainWindow::on_pushButton_27_clicked()
         ui->pushButton_27->setText("EXT");
         qDebug() << "Alt Mode: " << "EXT";
 
-        mysocket->Transponder_altitude_mode = 1;
-        mysocket->TransponderMode(false);
+        // If we have received something from the external sensor...
+        if(mysocket->Altimeter_data.altitude > 0.1){
+            mysocket->Transponder_altitude_mode = 1;
+            mysocket->TransponderMode(false);
+            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
+        }
+        // If we got no external sensor...
+        else{
+            mysocket->Transponder_altitude_mode = 0;
+            mysocket->TransponderMode(true);
+            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: red; }");
 
-        this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: orange; }");
+        }
     }
     else if(text == "EXT"){
+        ui->pushButton_27->setText("INT");
+        qDebug() << "Alt Mode: " << "INT";
+        if(m_pressure_sensor != nullptr){
+            mysocket->Transponder_altitude_mode = 3;
+            mysocket->TransponderMode(false);
+            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: #FF00FF; }");
+        }
+        else{
+            mysocket->Transponder_altitude_mode = 0;
+            mysocket->TransponderMode(true);
+            this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: red; }");
+        }
+    }
+
+    else if(text == "INT"){
         ui->pushButton_27->setText("AUTO");
         qDebug() << "Alt Mode: " << "AUTO";
 
-        mysocket->Transponder_altitude_mode = 2;
-        mysocket->TransponderMode(true);
-
+        if(mysocket->Altimeter_data.altitude > 0.1 || m_pressure_sensor != nullptr){
+            mysocket->Transponder_altitude_mode = 2;
+            mysocket->TransponderMode(true);
+        }
+        else{
+            mysocket->Transponder_altitude_mode = 0;
+            mysocket->TransponderMode(true);
+        }
         this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
     }
     else if(text == "AUTO"){
         ui->pushButton_27->setText("TRA");
         qDebug() << "Alt Mode: " << "TRA";
-
         mysocket->Transponder_altitude_mode = 0;
         mysocket->TransponderMode(true);
-
         this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
     }
     else{
         text = "TRA";
         qDebug() << "Alt Mode: " << "TRA";
-
         mysocket->Transponder_altitude_mode = 0;
         qDebug() << "This should not happen... #001";
-
         this->ui->lcdNumber_3->setStyleSheet("QLCDNumber { color: rgb(13, 255, 252); }");
     }
 /*
@@ -698,3 +728,4 @@ void MainWindow::on_reconnect_now_clicked()
     delete(mysocket);
     mysocket = new MyTcpSocket(this, ui->plainTextEdit);
 }
+

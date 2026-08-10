@@ -55,11 +55,7 @@ FORMS += \
     mainwindow_port_small.ui \
     mainwindow_port_pc.ui \
     mainwindow_port_vertical.ui \
-    remoteselector.ui \
-    mainwindow_phone.ui \
-    mainwindow_port_iPhone.ui \
-    mainwindow_port_screen.ui \
-    mainwindow_small.ui
+    mainwindow_port_iPhone.ui
 
 # ---- common installs (optional) ----
 INSTALLS += target

@@ -52,10 +52,6 @@
 
 #include "mytcpsocket.h"
 
-// Flight instruments
-#include "example/WidgetSix.h"
-//  (WidgetSix includes WidgetAI/ALT/ASI/HI/TC/VSI/EADI/EHSI etc.)
-
 #ifdef Q_OS_IOS
 #undef Q_OS_MAC
 #endif

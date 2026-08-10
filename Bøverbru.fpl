@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<flight-plan xmlns="http://www8.garmin.com/xmlschemas/FlightPlan/v1">
+  <created>2026-03-22T20:55:05Z</created>
+  <waypoint-table>
+    <waypoint>
+      <identifier>MISC1</identifier>
+      <type>USER WAYPOINT</type>
+      <country-code />
+      <lat>60.665527</lat>
+      <lon>10.677875</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>ENRV</identifier>
+      <type>AIRPORT</type>
+      <country-code>EN</country-code>
+      <lat>60.671665</lat>
+      <lon>10.568334</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>HOV2</identifier>
+      <type>USER WAYPOINT</type>
+      <country-code />
+      <lat>60.697933</lat>
+      <lon>10.352551</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>ENDO</identifier>
+      <type>AIRPORT</type>
+      <country-code>EN</country-code>
+      <lat>60.833332</lat>
+      <lon>9.916667</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>BAGN3</identifier>
+      <type>USER WAYPOINT</type>
+      <country-code />
+      <lat>60.824593</lat>
+      <lon>9.546487</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>MISC4</identifier>
+      <type>USER WAYPOINT</type>
+      <country-code />
+      <lat>60.814514</lat>
+      <lon>9.405209</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>MISC5</identifier>
+      <type>USER WAYPOINT</type>
+      <country-code />
+      <lat>60.839417</lat>
+      <lon>9.212167</lon>
+      <comment />
+    </waypoint>
+    <waypoint>
+      <identifier>ENKL</identifier>
+      <type>AIRPORT</type>
+      <country-code>EN</country-code>
+      <lat>60.791389</lat>
+      <lon>9.050555</lon>
+      <comment />
+    </waypoint>
+  </waypoint-table>
+  <route>
+    <route-name>ZZZZ ENKL</route-name>
+    <flight-plan-index>1</flight-plan-index>
+    <route-point>
+      <waypoint-identifier>MISC1</waypoint-identifier>
+      <waypoint-type>USER WAYPOINT</waypoint-type>
+      <waypoint-country-code />
+    </route-point>
+    <route-point>
+      <waypoint-identifier>ENRV</waypoint-identifier>
+      <waypoint-type>AIRPORT</waypoint-type>
+      <waypoint-country-code>EN</waypoint-country-code>
+    </route-point>
+    <route-point>
+      <waypoint-identifier>HOV2</waypoint-identifier>
+      <waypoint-type>USER WAYPOINT</waypoint-type>
+      <waypoint-country-code />
+    </route-point>
+    <route-point>
+      <waypoint-identifier>ENDO</waypoint-identifier>
+      <waypoint-type>AIRPORT</waypoint-type>
+      <waypoint-country-code>EN</waypoint-country-code>
+    </route-point>
+    <route-point>
+      <waypoint-identifier>BAGN3</waypoint-identifier>
+      <waypoint-type>USER WAYPOINT</waypoint-type>
+      <waypoint-country-code />
+    </route-point>
+    <route-point>
+      <waypoint-identifier>MISC4</waypoint-identifier>
+      <waypoint-type>USER WAYPOINT</waypoint-type>
+      <waypoint-country-code />
+    </route-point>
+    <route-point>
+      <waypoint-identifier>MISC5</waypoint-identifier>
+      <waypoint-type>USER WAYPOINT</waypoint-type>
+      <waypoint-country-code />
+    </route-point>
+    <route-point>
+      <waypoint-identifier>ENKL</waypoint-identifier>
+      <waypoint-type>AIRPORT</waypoint-type>
+      <waypoint-country-code>EN</waypoint-country-code>
+    </route-point>
+  </route>
+</flight-plan>
